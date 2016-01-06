@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/atmCorrection" >
+        <file>icon.png</file>
+    </qresource>
+</RCC>
