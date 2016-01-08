@@ -24,6 +24,7 @@
 import os
 from PyQt4 import QtGui, uic
 from atmProcessing import atmProcessingMain
+from bathyUtilities import saveImgByCopy
 
 FORM_CLASS, _ = uic.loadUiType(os.path.join(
     os.path.dirname(__file__), 'atmospheric_correction_dialog_base.ui'))
@@ -136,5 +137,6 @@ class atmCorrectionDialog(QtGui.QDialog, FORM_CLASS):
         options["isPan"] = self.isPan()
         options["aeroProfile"] = self.atmProfile()
         
-        atmProcessingMain(options)
+        reflectanceImg = atmProcessingMain(options)
+        saveImgByCopy(reflectanceImg, options["reflectanceFile"])
         self.closeWindow()           

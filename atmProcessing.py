@@ -71,16 +71,8 @@ def atmProcessingMain(options):
        radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
        reflectanceImg = radianceImg
         
-    outImg = reflectanceImg
-    outFile = reflectanceFile
+    return reflectanceImg
     
-    reflectanceImg = None        
-    print("Saving corrected image")    
-    driver = gdal.GetDriverByName ( "GTiff" )
-    savedImg = driver.CreateCopy(outFile, outImg , 0 , driverOptionsGTiff)
-    savedImg = None
-    outImg = None
-
 ################################################################################################
 
 def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan = False):

@@ -222,10 +222,10 @@ def world2Pixel(geoMatrix, x, y):
   return [pixel, line]
    
 # save the data to geotiff or memory    
-def saveImg (data, geotransform, proj, outImg, noDataValue = np.nan):
+def saveImg (data, geotransform, proj, outPath, noDataValue = np.nan):
     
     # Start the gdal driver for GeoTIFF
-    if outImg == "MEM":
+    if outPath == "MEM":
         driver = gdal.GetDriverByName("MEM")
         driverOpt = []
     else:
@@ -235,22 +235,30 @@ def saveImg (data, geotransform, proj, outImg, noDataValue = np.nan):
     
     shape=data.shape
     if len(shape) > 2:
-        ds = driver.Create(outImg, shape[1], shape[0], shape[2], gdal.GDT_Float32, driverOpt)
+        ds = driver.Create(outPath, shape[1], shape[0], shape[2], gdal.GDT_Float32, driverOpt)
         ds.SetProjection(proj)
         ds.SetGeoTransform(geotransform)
         for i in range(shape[2]):
             ds.GetRasterBand(i+1).WriteArray(data[:,:,i])  
             ds.GetRasterBand(i+1).SetNoDataValue(noDataValue)
     else:
-        ds = driver.Create(outImg, shape[1], shape[0], 1, gdal.GDT_Float32)
+        ds = driver.Create(outPath, shape[1], shape[0], 1, gdal.GDT_Float32)
         ds.SetProjection(proj)
         ds.SetGeoTransform(geotransform)
         ds.GetRasterBand(1).WriteArray(data)
         ds.GetRasterBand(1).SetNoDataValue(noDataValue)
             
-    print('Saved ' +outImg )
+    print('Saved ' +outPath )
 
     return ds
+
+def saveImgByCopy(outImg, outPath):
+        
+    driver = gdal.GetDriverByName ( "GTiff" )
+    savedImg = driver.CreateCopy(outPath, outImg , 0 , driverOptionsGTiff)
+    savedImg = None
+    outImg = None
+    print('Saved ' +outPath )
 
 def plotRasterPointsFromVector(inImg, inVector, fieldName, invertMeasuredPoints, limits = [-30, 0], tide = 0, title = "", qualityImg = None, qualityThresholds = None, figureFilename = ""):
 

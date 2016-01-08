@@ -38,6 +38,7 @@ from processing.core.parameters import ParameterFile
 from processing.core.parameters import ParameterNumber
 
 from atmProcessing import atmProcessingMain
+from bathyUtilities import saveImgByCopy
 
 class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
 
@@ -98,7 +99,9 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         options["isPan"] = self.getParameterValue(self.PANCHROMATIC)
         options["aeroProfile"] = atmProfList[self.getParameterValue(self.ATMOSPHERIC_PROFILE)]
         
-        atmProcessingMain(options)
+        reflectanceImg = atmProcessingMain(options) 
+        saveImgByCopy(reflectanceImg, options["reflectanceFile"])
+        
 
     def atmParam(self):
         atm = {'AOT': self.getParameterValue(self.AOT), 'PWV': self.getParameterValue(self.PWV), 'ozone': self.getParameterValue(self.OZONE)}
