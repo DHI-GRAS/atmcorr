@@ -21,14 +21,13 @@ def atmProcessingMain(options):
     # Commonly used filenames
     dnFile = options["dnFile"]
     metadataFile = options["metadataFile"] 
-    reflectanceFile = options["reflectanceFile"]
     roiFile = options["roiFile"] if "roiFile" in options else ""
     
     # 
     atmCorrMethod = options["atmCorrMethod"]
     atm = options["atm"]
     isPan = options["isPan"]
-    adjCorr = 0 # this parameter is related to diffuse light. According to Mikkel the parameter is not important and is therefore set to 0.
+    adjCorr = options["adjCorr"]
     aeroProfile = options["aeroProfile"]
 
     # DN -> Radiance -> Reflectance        

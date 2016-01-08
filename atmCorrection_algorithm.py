@@ -98,6 +98,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         options["atm"] = self.atmParam()
         options["isPan"] = self.getParameterValue(self.PANCHROMATIC)
         options["aeroProfile"] = atmProfList[self.getParameterValue(self.ATMOSPHERIC_PROFILE)]
+        options["adjCorr"] = 0
         
         reflectanceImg = atmProcessingMain(options) 
         saveImgByCopy(reflectanceImg, options["reflectanceFile"])
