@@ -39,17 +39,22 @@ def atmProcessingMain(options):
         # If atmospheric parameters needed by 6S are not specified then
         # donwload and use MODIS atmopsheric products
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
-            aot, pwv, ozone = downloadAtmParametersMODIS(dnFile, metadataFile, sensor)
+            modisAtmDir = downloadAtmParametersMODIS(dnFile, metadataFile, sensor)            
+            
+            aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent = None, yearDoy = "", time = -1, roiShape = None)
             if not atm['AOT']:
-                atm['AOT'] = aot[0]
+                atm['AOT'] = aot
             if not atm['PWV']:
-                atm['PWV'] = pwv[0]
+                atm['PWV'] = pwv
             if not atm['ozone']:
-                atm['ozone'] = ozone[0]
+                atm['ozone'] = ozone
+                
+            deleteDownloadedModisFiles(modisAtmDir)
+            
         print("AOT: "+str(atm['AOT']))
         print("Water Vapour: "+str(atm['PWV']))
         print("Ozone: "+str(atm['ozone']))
-        
+            
         reflectanceImg = atmCorr6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, adjCorr=adjCorr, aeroProfile=aeroProfile)
         radianceImg = None
         

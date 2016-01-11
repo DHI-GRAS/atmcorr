@@ -22,10 +22,10 @@ import glob
 #C_gdalwarp = os.path.join(os.path.dirname(gdal.__file__), 'gdalwarp')
 C_gdalwarp = 'gdalwarp'
 if platform.system() == "Windows":
-    wd = os.path.dirname(__file__)
+    wd = os.path.dirname(os.path.abspath(__file__))
     C_daac2disk = os.path.join(wd, "dependency", "Daac2Disk_win.exe")
 else:
-    wd = os.path.dirname(__file__)
+    wd = os.path.dirname(os.path.abspath(__file__))
     C_daac2disk = os.path.join(wd, "dependency", "./Daac2Disk_linux")    
 
 def reprojectModisSwath(inFilename, outFilename, projectionString):
@@ -105,37 +105,49 @@ def findClosestOverpass(filesMOD, time):
     
     return closestFile
 
-def estimateAtmParametersMODIS(fileImg, extent, modisAtmDir, yearDoy = "", time = -1, roiShape = None):
+# Sort the MODIS file list by how close their overpass is to the given time    
+def sortByClosestOverpass(filesMOD, time):
+    unsortedDict = {}    
+    for fileMOD in filesMOD if not isinstance(filesMOD, basestring) else [filesMOD]:
+        match = re.search("A\d{7}\.(\d{2})(\d{2})\.\d{3}\..*\.hdf", fileMOD)        
+        overpassTime = float(match.group(1)) + float(match.group(2))/60.0
+        overpassTimeDifference = abs(time-overpassTime)
+        unsortedDict[overpassTimeDifference] = fileMOD
+        sortedKeys = sorted(unsortedDict.keys())
+    return [unsortedDict[key] for key in sortedKeys]
+        
+    
+def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = "", time = -1, roiShape = None):
         
     # Find the MODIS files in MODIS_ATM directory    
-    fileMOD05 = []
-    fileMOD04 = []
-    fileMOD07 = []
+    filesMOD05 = []
+    filesMOD04 = []
+    filesMOD07 = []
     for root, _, files in os.walk(modisAtmDir):
         for name in files:
             match = re.match("^M[OY]D05_L2\.A"+yearDoy, name)
             if match:
-                fileMOD05.append(os.path.join(root, name))
+                filesMOD05.append(os.path.join(root, name))
             match = re.match("^M[OY]D04_3K\.A"+yearDoy, name)
             if match:
-                fileMOD04.append(os.path.join(root, name))
+                filesMOD04.append(os.path.join(root, name))
             match = re.match("^M[OY]D07_L2\.A"+yearDoy, name)
             if match:
-                fileMOD07.append(os.path.join(root, name))
+                filesMOD07.append(os.path.join(root, name))
                 
-    if len(fileMOD05)>0 and len(fileMOD04)>0 and len(fileMOD07)>0:
-        # if time is not given just pick the first file from the list        
-        if time < 0:
-            fileMOD05 = fileMOD05[0]
-            fileMOD04 = fileMOD04[0]
-            fileMOD07 = fileMOD07[0]
-        else:
-            fileMOD05 = findClosestOverpass(fileMOD05, time)
-            fileMOD04 = findClosestOverpass(fileMOD04, time)
-            fileMOD07 = findClosestOverpass(fileMOD07, time)
-    else:
+    if not (len(filesMOD05)>0 and len(filesMOD04)>0 and len(filesMOD07)>0):
         return -1, -1 ,-1
+        
+    # if time is given then sort the the files by how close the overpass time
+    # is to the given time        
+    if time > 0:
+        filesMOD05 = sortByClosestOverpass(fileMOD05, time)
+        filesMOD04 = sortByClosestOverpass(fileMOD04, time)
+        filesMOD07 = sortByClosestOverpass(fileMOD07, time)
     
+    fileMOD05 = filesMOD05[0]
+    fileMOD04 = filesMOD04[0]
+    fileMOD07 = filesMOD07[0]
     
     fieldMOD05 = 'Water_Vapor_Near_Infrared'
     scaleFactorMOD05 = 0.001
@@ -149,9 +161,18 @@ def estimateAtmParametersMODIS(fileImg, extent, modisAtmDir, yearDoy = "", time 
     scaleFactorMOD07 = 0.1 * 0.001 # convert to Dobson and then to cm-atm
     fillValueMOD07 = -9999
     
-    # get the projection string of the WV2 image
+    # Get the projection and extent (if needed) of the input image
     inImg = gdal.Open(fileImg, gdal.GA_ReadOnly)
     proj = inImg.GetProjection()
+    # If neither extent or roiShape are given the use the extent of the
+    # whole input image    
+    if extent is None and roiShape is None:
+        gt=inImg.GetGeoTransform()
+        cols = inImg.RasterXSize
+        rows = inImg.RasterYSize
+        ext = u.getExtent(gt,cols,rows)
+        # Extent is projected coordinates of UL and BR pixels
+        extent = [ext[0][0], ext[0][1], ext[2][0], ext[2][1]]
     inImg = None
     
     # get AOT
@@ -251,38 +272,30 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
     #########################################################
     # Call daac2disk to donwload the data
     version = str(6)
-    downloadDir = os.path.join(os.path.dirname(__file__), "temp", "MODIS_ATM")
-    workingDir = os.path.join(os.path.dirname(__file__), "temp")
+    downloadDir = os.path.join(os.path.dirname(imagePath), "temp", "MODIS_ATM")
+    workingDir = os.path.join(os.path.dirname(imagePath), "temp")
     if not os.path.exists(downloadDir):
         os.makedirs(downloadDir)
     for shortname in ["MOD05_L2", "MOD04_3K", "MOD07_L2"]:
+        print "Downloading "+shortname
         cmd = prepareDaac2DiskCommand(shortname, version, extent, date, date, downloadDir)
-        #print cmd
-        #proc = subprocess.Popen(cmd, shell=True, cwd=workingDir, stdout=subprocess.PIPE, stdin=open(os.devnull), stderr=subprocess.STDOUT, universal_newlines=True).stdout
+        print cmd
         proc = subprocess.Popen(cmd, shell=True, cwd=workingDir, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.communicate(input="y")
-        #for line in iter(proc.readline, ""):
-        #self.outputs = Outputs(outputs[0], outputs[1])
-        #    print line
-            
-    ##########################################################
-    # Extract the atmospheric parameters
     
-    # Extent is projected coordinates of UL and BR pixels
-    extent = [ext[0][0], ext[0][1], ext[2][0], ext[2][1]]
-    aot, wv, ozone = estimateAtmParametersMODIS(imagePath, extent, downloadDir, yearDoy = "", time = UT, roiShape = None)
+    inImg = None
+    return downloadDir
+        
     
-    ##########################################################
-    # Clean up
+
+# Clean up
+def deleteDownloadedModisFiles(downloadDir):
     modisList = glob.glob(os.path.join(downloadDir, "MOD") + "*.hdf")
     for modisFile in modisList:
         try:
             os.remove(modisFile)
         except:
             print "could not remove downloaded modisfile: ", modisFile
-    
-    
-    return aot, wv, ozone
     
 # Prepare daac2disk command to donwload MODIS products
 def prepareDaac2DiskCommand(shortname, version, extent, startDate, endDate, downloadDir):
