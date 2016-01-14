@@ -124,6 +124,9 @@ class atmCorrectionDialog(QtGui.QDialog, FORM_CLASS):
             isPanbool = False
         return isPanbool
     
+    def tileSizePixels(self):
+        return self.spinBox_tileSize.value()
+    
     def runAtmCorrection(self):
         options = {}
         # input/output parameters
@@ -137,7 +140,7 @@ class atmCorrectionDialog(QtGui.QDialog, FORM_CLASS):
         options["isPan"] = self.isPan()
         options["aeroProfile"] = self.atmProfile()
         options["adjCorr"] = 0
-        options["tileSizePixels"]=0
+        options["tileSizePixels"]=self.tileSizePixels()
         
         reflectanceImg = atmProcessingMain(options)
         saveImgByCopy(reflectanceImg, options["reflectanceFile"])

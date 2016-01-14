@@ -57,6 +57,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
     AOT = 'AOT'
     PWV = 'PWV'
     OZONE = 'OZONE'
+    TILE_SIZE_PIXELS = 'TILE_SIZE_PIXELS'
     OUTPUT_FILE = 'OUTPUT_FILE' 
 
 
@@ -76,6 +77,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         self.addParameter(ParameterNumber(self.AOT, 'aot'))
         self.addParameter(ParameterNumber(self.PWV, 'pwv'))
         self.addParameter(ParameterNumber(self.OZONE, 'ozone'))
+        self.addParameter(ParameterNumber(self.TILE_SIZE_PIXELS, 'Tile size (in pixels)', 0, None, 0))
         self.addOutput(OutputRaster(self.OUTPUT_FILE, 'output file'))
 
     def processAlgorithm(self, progress):
@@ -99,7 +101,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         options["isPan"] = self.getParameterValue(self.PANCHROMATIC)
         options["aeroProfile"] = atmProfList[self.getParameterValue(self.ATMOSPHERIC_PROFILE)]
         options["adjCorr"] = 0
-        options["tileSizePixels"]=0
+        options["tileSizePixels"]=self.getParameterValue(self.TILE_SIZE_PIXELS)
         
         reflectanceImg = atmProcessingMain(options) 
         saveImgByCopy(reflectanceImg, options["reflectanceFile"])
