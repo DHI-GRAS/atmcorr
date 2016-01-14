@@ -24,6 +24,8 @@ import numpy as np
 import scipy.stats as st
 import csv
 from scipy.interpolate import interp1d
+import scipy.interpolate
+import scipy.ndimage
 
 
 driverOptionsGTiff = ['COMPRESS=DEFLATE', 'PREDICTOR=1', 'BIGTIFF=IF_SAFER']
@@ -434,9 +436,28 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
             bandFilters = [pan]
             
     return startWV, endWV, bandFilters
+
+# Split the image into square tiles of tileSize pixels and returns the extents
+# ([minX, maxY, maxX, minY]) of each tile in the projected units.
+def getTileExtents(inImg, tileSize):
+    tileExtents = []
+    gt = inImg.GetGeoTransform()
+
+    rows = [int(i*tileSize) for i in range(int(inImg.RasterYSize/tileSize)+1)]
+    rows.append(inImg.RasterYSize)
+    cols = [int(i*tileSize) for i in range(int(inImg.RasterXSize/tileSize)+1)]
+    cols.append(inImg.RasterXSize)
+    
+    for y in range(1, len(rows)):
+        tileExtents.append([])
+        for x in range(1, len(cols)):
+            ext = getExtent(gt, cols[x]-1, rows[y]-1, cols[x-1], rows[y-1])
+            tileExtents[y-1].append([ext[0][0], ext[0][1], ext[2][0], ext[2][1]])
+    
+    return tileExtents
     
 # Return list of corner coordinates from a geotransform
-def getExtent(gt,cols,rows):
+def getExtent(gt,cols,rows, startCol = 0, startRow = 0):
     ''' Return list of corner coordinates from a geotransform
 
         @type gt:   C{tuple/list}
@@ -445,12 +466,16 @@ def getExtent(gt,cols,rows):
         @param cols: number of columns in the dataset
         @type rows:   C{int}
         @param rows: number of rows in the dataset
+        @type startCol:   C{int}
+        @param startCol: starting column of the subset relative to gt origin
+        @type startRow:   C{int}
+        @param startRow: starting column of the subset relative to gt origin
         @rtype:    C{[float,...,float]}
         @return:   coordinates of each corner
     '''
     ext=[]
-    xarr=[0,cols]
-    yarr=[0,rows]
+    xarr=[startCol,startCol+cols]
+    yarr=[startRow,startRow+rows]
 
     for px in xarr:
         for py in yarr:
@@ -480,3 +505,4 @@ def reprojectCoords(coords,src_srs,tgt_srs):
         x,y,z = transform.TransformPoint(x,y)
         trans_coords.append([x,y])
     return trans_coords
+    

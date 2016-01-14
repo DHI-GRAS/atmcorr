@@ -11,6 +11,7 @@ from osgeo import gdal, ogr
 import numpy as np
 import numpy.ma as ma
 from scipy.ndimage import filters
+from scipy import interpolate
 import bathyUtilities
 import os
 from math import *
@@ -23,7 +24,7 @@ sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import *
 
 
-def atmCorr6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, adjCorr=False, aeroProfile="Continental"):
+def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, aeroProfile="Continental"):
 
     # Have different paths to 6S and spectral response curves on Windows where, 
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
@@ -38,7 +39,7 @@ def atmCorr6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, senso
         bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
     
     s = SixS(PATH_6S)
-    
+      
     #########################################################
     # Set 6S BRDF model to 1 m/s wind ocean with typical salinity and pigment concentration
     #s.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)     
@@ -92,9 +93,10 @@ def atmCorr6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, senso
         bandFilters[i] = bathyUtilities.resampleBandFilters(band, startWV, endWV, 0.0025)
     #########################################################
     # Run 6S for each spectral band
-    refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount)) 
+    
     bandNum = 1
-    pixelSize = inImg.GetGeoTransform()[1] # assume same horizontal and vertical resolution
+    outputParams = [] 
+    print "Estimating 6S correction parameters..."
     for bandFilter in bandFilters:
         print(bandNum)       
         # run 6S and get correction factors        
@@ -118,31 +120,71 @@ def atmCorr6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, senso
         xa = s.outputs.coef_xa # inverse of transmitance
         xb = s.outputs.coef_xb # scattering term of the atmosphere
         xc = s.outputs.coef_xc # reflectance of atmosphere for isotropic light (albedo)
-        # read uncorrected radiometric data and correct
-        radianceData = inImg.GetRasterBand(bandNum).ReadAsArray()
-        y = np.where(np.isnan(radianceData), np.nan, xa*radianceData - xb)
-        refl[:,:,bandNum-1] = np.where(np.isnan(y), 0, np.maximum(y/(1.0+xc*y),0.0))
         
+        outputParams.append({'xa': xa, 'xb': xb, 'xc': xc})
+        bandNum += 1
+    s = None
+    
+    return outputParams
+    
+def performAtmCorrection(inImg, correctionParams6S, adjCorr=False,):
+    refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount)) 
+    pixelSize = inImg.GetGeoTransform()[1] # assume same horizontal and vertical resolution
+    
+    for bandNum, correctionParam in enumerate(correctionParams6S):
+        # Read uncorrected radiometric data and correct
+        radianceData = inImg.GetRasterBand(bandNum+1).ReadAsArray()
+
+        # Interpolate the 6S correction parameters from one per image tile to
+        # one per image pixel
+        xa = explodeCorrectionParam(correctionParam['xa'], radianceData.shape)         
+        xb = explodeCorrectionParam(correctionParam['xb'], radianceData.shape)
+        xc = explodeCorrectionParam(correctionParam['xc'], radianceData.shape)                   
+        
+        # Perform the atmospheric correction        
+        y = np.where(np.isnan(radianceData), np.nan, xa*radianceData - xb)
+        refl[:,:,bandNum] = np.where(np.isnan(y), 0, np.maximum(y/(1.0+xc*y),0.0))
+        
+        # Perform adjecency correction if required
         if adjCorr:
             try:
                 radius = float(adjCorr)
             except:
                 radius = 300    
             refl[:,:,bandNum-1] = adjacencyCorrection(refl[:,:,bandNum-1], pixelSize, s, radius)
-        
-        bandNum = bandNum + 1
-        
-#        s.write_input_file("C:\Temp\in6s_"+str(bandNum)+".txt")
-#        with open("C:\Temp\out6s_"+str(bandNum)+".txt", 'w') as f:
-#            f.write(s.outputs.fulltext)  
+     
             
     res = bathyUtilities.saveImg (refl, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
     refl = None
     radianceData = None    
     
-    s = None
-    
     return res
+
+# Interpolate the an array with parameters into the new shape    
+def explodeCorrectionParam(param, newShape):
+    array = np.array(param)
+    
+    # If there is only one value then assign it to each cell in the new array    
+    if array.size == 1:
+        return np.zeros(newShape)+array[0]
+    # Otherwise interpolate
+    else:
+        # At least two points in each dimension are needed for linerar interpolation
+        if array.shape[0] == 1:
+            array = np.vstack((array, array))
+        if array.shape[1] == 1:
+            array = np.hstack((array, array))
+
+        # Assume that the parameters are regularly spaced within the new array        
+        xStep = newShape[1]/(array.shape[1]) 
+        xLoc = np.array([(x+0.5)*xStep for x in range(array.shape[1])])
+        yStep = newShape[0]/(array.shape[0]) 
+        yLoc = np.array([(y+0.5)*yStep for y in range(array.shape[0])])
+
+        f = interpolate.interp2d(xLoc, yLoc, array, fill_value = None)
+        explodedParam = f(range(newShape[1]), range(newShape[0]))
+        
+        return explodedParam
 
 # NEEDS TO BE DOUBLE CHECKED
 # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data

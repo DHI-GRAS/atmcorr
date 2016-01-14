@@ -137,6 +137,7 @@ class atmCorrectionDialog(QtGui.QDialog, FORM_CLASS):
         options["isPan"] = self.isPan()
         options["aeroProfile"] = self.atmProfile()
         options["adjCorr"] = 0
+        options["tileSizePixels"]=0
         
         reflectanceImg = atmProcessingMain(options)
         saveImgByCopy(reflectanceImg, options["reflectanceFile"])

@@ -23,12 +23,15 @@ def atmProcessingMain(options):
     metadataFile = options["metadataFile"] 
     roiFile = options["roiFile"] if "roiFile" in options else ""
     
-    # 
+    # Correction options
     atmCorrMethod = options["atmCorrMethod"]
-    atm = options["atm"]
+    # Make a copy of atm since it will be changing in the code but the original
+    # is still required     
+    atm = options["atm"].copy()
     isPan = options["isPan"]
     adjCorr = options["adjCorr"]
     aeroProfile = options["aeroProfile"]
+    tileSize = options["tileSizePixels"]
 
     # DN -> Radiance -> Reflectance        
     if atmCorrMethod == "6S":
@@ -36,26 +39,57 @@ def atmProcessingMain(options):
         inImg = openAndClipRaster(dnFile, roiFile)            
         radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS, isPan=isPan)
         inImg = None
+        
+        if tileSize > 0:
+            tileExtents = getTileExtents(radianceImg, tileSize)
+        else:
+            tileExtents = [[None]]
+                
         # If atmospheric parameters needed by 6S are not specified then
         # donwload and use MODIS atmopsheric products
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
-            modisAtmDir = downloadAtmParametersMODIS(dnFile, metadataFile, sensor)            
-            
-            aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent = None, yearDoy = "", time = -1, roiShape = None)
-            if not atm['AOT']:
-                atm['AOT'] = aot
-            if not atm['PWV']:
-                atm['PWV'] = pwv
-            if not atm['ozone']:
-                atm['ozone'] = ozone
+            modisAtmDir = downloadAtmParametersMODIS(dnFile, metadataFile, sensor) 
+        else: 
+            modisAtmDir = None
+        
+        # Structure holding the 6S correction parameters has for each band in 
+        # the image a dictionary with arrays of values (one for each tile) 
+        # of the three correction parameter
+        correctionParams = [{'xa':[[0]*len(tileExtents[0])]*len(tileExtents), 
+                             'xb':[[0]*len(tileExtents[0])]*len(tileExtents),
+                             'xc':[[0]*len(tileExtents[0])]*len(tileExtents)} 
+                             for i in range(radianceImg.RasterCount)]
+
+        # Get 6S correction parameters for an extent of each tile
+        for y, tileRow in enumerate(tileExtents):
+            for x, extent in enumerate(tileRow): 
+                # If MODIS atmospheric data was downloaded then use it to set
+                # different atmospheric parameters for each tile                
+                if modisAtmDir:
+                    atm = options["atm"].copy()
+                    aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent = extent, yearDoy = "", time = -1, roiShape = None)
+                    if not atm['AOT']:
+                        atm['AOT'] = aot
+                    if not atm['PWV']:
+                        atm['PWV'] = pwv
+                    if not atm['ozone']:
+                        atm['ozone'] = ozone
+                    
+                print("AOT: "+str(atm['AOT']))
+                print("Water Vapour: "+str(atm['PWV']))
+                print("Ozone: "+str(atm['ozone']))
                 
+                tileCorrectionParams = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, aeroProfile=aeroProfile)
+                for band, bandCorrectionParams in enumerate(tileCorrectionParams):                
+                    correctionParams[band]['xa'][y][x] = bandCorrectionParams['xa']
+                    correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']
+                    correctionParams[band]['xc'][y][x] = bandCorrectionParams['xc']                                  
+        
+        # Then perform atmospheric correction of the whole image        
+        reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr=adjCorr)
+
+        if modisAtmDir:
             deleteDownloadedModisFiles(modisAtmDir)
-            
-        print("AOT: "+str(atm['AOT']))
-        print("Water Vapour: "+str(atm['PWV']))
-        print("Ozone: "+str(atm['ozone']))
-            
-        reflectanceImg = atmCorr6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, adjCorr=adjCorr, aeroProfile=aeroProfile)
         radianceImg = None
         
     elif atmCorrMethod in ["DOS", "TOA"]:
@@ -365,5 +399,5 @@ def darkObjectSubstraction(inImg):
                 dosDN.append(i-1)
                 break
     return dosDN
-
+            
 ###############################################################################

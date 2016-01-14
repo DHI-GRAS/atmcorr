@@ -117,8 +117,7 @@ def sortByClosestOverpass(filesMOD, time):
     return [unsortedDict[key] for key in sortedKeys]
         
     
-def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = "", time = -1, roiShape = None):
-        
+def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = "", time = -1, roiShape = None):  
     # Find the MODIS files in MODIS_ATM directory    
     filesMOD05 = []
     filesMOD04 = []
