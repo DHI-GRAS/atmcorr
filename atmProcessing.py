@@ -32,6 +32,7 @@ def atmProcessingMain(options):
     adjCorr = options["adjCorr"]
     aeroProfile = options["aeroProfile"]
     tileSize = options["tileSizePixels"]
+    aotMultiplier = options["aotMultiplier"] if "aotMultiplier" in options else 1.0
 
     # DN -> Radiance -> Reflectance        
     if atmCorrMethod == "6S":
@@ -74,7 +75,9 @@ def atmProcessingMain(options):
                         atm['PWV'] = pwv
                     if not atm['ozone']:
                         atm['ozone'] = ozone
-                    
+
+                atm['AOT'] = atm['AOT'] * aotMultiplier               
+                
                 print("AOT: "+str(atm['AOT']))
                 print("Water Vapour: "+str(atm['PWV']))
                 print("Ozone: "+str(atm['ozone']))
