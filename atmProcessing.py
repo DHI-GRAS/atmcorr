@@ -82,7 +82,7 @@ def atmProcessingMain(options):
                 print("Water Vapour: "+str(atm['PWV']))
                 print("Ozone: "+str(atm['ozone']))
                 
-                tileCorrectionParams = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, aeroProfile=aeroProfile)
+                tileCorrectionParams = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, aeroProfile=aeroProfile, extent = extent)
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):                
                     correctionParams[band]['xa'][y][x] = bandCorrectionParams['xa']
                     correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']

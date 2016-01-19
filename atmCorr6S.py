@@ -24,7 +24,7 @@ sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import *
 
 
-def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, aeroProfile="Continental"):
+def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, aeroProfile="Continental", extent = None):
 
     # Have different paths to 6S and spectral response curves on Windows where, 
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
@@ -80,7 +80,7 @@ def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone
     elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
         readGeometryPHR1(metadataFile, s)
     elif sensor == "L8" or sensor == "L7":
-        readGeometryL8(metadataFile, s)
+        readGeometryL8(metadataFile, s, extent)
 
     ##############################################################
     # Set 6S band filters   
@@ -314,17 +314,19 @@ def readGeometryWV2(metadataFile, model6S):
     s.geometry.month = month
     
 
-def readGeometryL8(metadataFile, model6S):
+def readGeometryL8(metadataFile, model6S, extent):
     
     s = model6S
     
     # read viewing gemotery from Landsat metadata file
     sunElRegex = "\s*SUN_ELEVATION\s*=\s*(.*)\s*"
     sunAzRegex = "\s*SUN_AZIMUTH\s*=\s*(.*)\s*"
-    dateAcquiredRegex = "\s*DATE_ACQUIRED\s*=\s*\d{4}-(\d{2})-(\d{2})\s*"    
+    dateAcquiredRegex = "\s*DATE_ACQUIRED\s*=\s*\d{4}-(\d{2})-(\d{2})\s*" 
+    minXRegex = "\s*CORNER_LL_PROJECTION_X_PRODUCT\s*=\s*(\d+\.\d+)\s*"
+    maxXRegex = "\s*CORNER_UR_PROJECTION_X_PRODUCT\s*=\s*(\d+\.\d+)\s*"
     
     month = 0; day = 0; sunEl = 0.0; sunAz = 0.0; satZen = 0.0; satAz = 0.0;
-    
+    minX = 0; maxX = 0
     
     with open(metadataFile, 'r') as metadata:
         for line in metadata:
@@ -338,13 +340,26 @@ def readGeometryL8(metadataFile, model6S):
             match = re.match(sunAzRegex , line)
             if match:
                 sunAz = float(match.group(1))
+            match = re.match(minXRegex, line)
+            if match:
+                minX = float(match.group(1))
+            match = re.match(maxXRegex, line)
+            if match:
+                maxX = float(match.group(1))
         
     sunZen = 90 - sunEl
     
     s.geometry = Geometry.User()
     s.geometry.solar_z = sunZen
-    s.geometry.solar_a = sunAz
-    s.geometry.view_z = satZen
+    s.geometry.solar_a = sunAz   
+    if extent is None:    
+        s.geometry.view_z = satZen
+    else:
+        # extent is [minX, maxY, maxX, minY]
+        extentMiddleX = (extent[0]+extent[2])/2 
+        imageMiddleX = (minX + maxX)/2
+        # L8 has 15 deg field of view so VZA ranges between 0 and 7.5 degrees
+        s.geometry.view_z = abs(imageMiddleX - extentMiddleX)/(imageMiddleX - minX) * 7.5
     s.geometry.view_a = satAz
     s.geometry.day = day
     s.geometry.month = month
