@@ -453,29 +453,29 @@ def getTileExtents(inImg, tileSize):
         for x in range(1, len(cols)):
             ext = getExtent(gt, cols[x]-1, rows[y]-1, cols[x-1], rows[y-1])
             tileExtents[y-1].append([ext[0][0], ext[0][1], ext[2][0], ext[2][1]])
-    
+            
     return tileExtents
     
 # Return list of corner coordinates from a geotransform
-def getExtent(gt,cols,rows, startCol = 0, startRow = 0):
+def getExtent(gt,endCol, endRow, startCol = 0, startRow = 0):
     ''' Return list of corner coordinates from a geotransform
 
         @type gt:   C{tuple/list}
         @param gt: geotransform
-        @type cols:   C{int}
-        @param cols: number of columns in the dataset
-        @type rows:   C{int}
-        @param rows: number of rows in the dataset
+        @type endCol:   C{int}
+        @param endCol: ending column of the subset relative to gt origin
+        @type endRow:   C{int}
+        @param endRow: ending row of the subset relative to gt origin
         @type startCol:   C{int}
         @param startCol: starting column of the subset relative to gt origin
         @type startRow:   C{int}
-        @param startRow: starting column of the subset relative to gt origin
+        @param startRow: starting row of the subset relative to gt origin
         @rtype:    C{[float,...,float]}
         @return:   coordinates of each corner
     '''
     ext=[]
-    xarr=[startCol,startCol+cols]
-    yarr=[startRow,startRow+rows]
+    xarr=[startCol,endCol]
+    yarr=[startRow,endRow]
 
     for px in xarr:
         for py in yarr:
