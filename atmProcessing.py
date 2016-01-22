@@ -7,6 +7,7 @@ Created on Tue Sep 09 12:54:33 2014
 import numpy as np
 import re
 import os
+from math import cos, radians, pi
 from xml.etree import ElementTree as ET
 from osgeo import gdal
 from atmCorr6S import *
@@ -101,10 +102,15 @@ def atmProcessingMain(options):
         else:
             doDOS = False 
         inImg = openAndClipRaster(dnFile, roiFile)
-        radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
-        inImg = None
-        reflectanceImg = toaReflectance(radianceImg, metadataFile, sensor)    
-        radianceImg = None
+        if sensor not in ["S2A_10m", "S2A_60m"]:
+            radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
+            inImg = None
+            reflectanceImg = toaReflectance(radianceImg, metadataFile, sensor)    
+            radianceImg = None
+        # S2 data is provided in L1C meaning in TOA reflectance
+        else:
+            reflectanceImg = toaReflectance(inImg, metadataFile, sensor) 
+            inImg = None
         
     elif atmCorrMethod == "RAD":
        doDOS = False 
@@ -123,6 +129,8 @@ def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan = False):
         res = toaRadiancePHR1(inImg, metadataFile, doDOS) 
     elif sensor == "L8" or sensor == "L7":
         res = toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor)
+    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+        res = toaRadianceS2(inImg, metadataFile)
     return res
 
 def toaReflectance(inImg, metadataFile, sensor):
@@ -132,6 +140,8 @@ def toaReflectance(inImg, metadataFile, sensor):
         res = toaReflectancePHR1(inImg, metadataFile) 
     elif sensor == "L8" or sensor == "L7":
         res = toaReflectanceL8(inImg, metadataFile)
+    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+        res = toaReflectanceS2(inImg, metadataFile)
     return res
 
 # Apply radiometric correction to WV2 image, with DOS atmospheric correction optional.
@@ -387,6 +397,66 @@ def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
 def toaReflectanceL8(inImg, metadataFile):
     # for now just do nothing
     return inImg    
+
+# Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
+# Assumes a L1C product which contains TOA reflectance: https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
+def toaRadianceS2(inImg, metadataFile):
+    
+    # Get parameters from main metadata file
+    tree = ET.parse(metadataFile)
+    root = tree.getroot()
+    namespace = root.tag.split('}')[0]+'}'
+    baseNodePath = "./"+namespace+"General_Info/Product_Image_Characteristics/"
+    rc = float(root.find(baseNodePath+"QUANTIFICATION_VALUE").text)
+    u = float(root.find(baseNodePath+"Reflectance_Conversion/U").text)
+    irradianceNodes = root.findall(baseNodePath+"Reflectance_Conversion/Solar_Irradiance_List/SOLAR_IRRADIANCE")
+    e0 = []
+    for node in irradianceNodes:
+        e0.append(float(node.text))
+    
+    # Zenith angle comes from GRANULE metadata file
+    baseDir = os.path.join(os.path.dirname(metadataFile), "GRANULE")    
+    dirs = os.listdir(baseDir)
+    for d in dirs:
+        if os.path.isdir(os.path.join(baseDir, d)) and "S2" in d:
+            metadataFile = [f for f in os.listdir(os.path.join(baseDir, d)) if f.endswith('.xml')][0]
+            metadataFile = os.path.join(baseDir, d, metadataFile)
+            break
+    tree = ET.parse(metadataFile)
+    root = tree.getroot()
+    namespace = root.tag.split('}')[0]+'}'
+    z = float(tree.find("./"+namespace+"Geometric_Info/Tile_Angles/Mean_Sun_Angle/ZENITH_ANGLE").text)
+    
+    # Convert to radiance
+    print("Radiometric correction")
+    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(e0)))
+    for i in range(len(e0)):
+        print(i)
+        rToa = inImg.GetRasterBand(i+1).ReadAsArray().astype(float) / rc
+        radiometricData[:,:,i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
+    
+    res = saveImg (radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
+    return res
+
+# Assumes a L1C product which contains TOA reflectance: https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
+def toaReflectanceS2(inImg, metadataFile):
+    
+    # Get parameters from main metadata file
+    tree = ET.parse(metadataFile)
+    root = tree.getroot()
+    namespace = root.tag.split('}')[0]+'}'
+    baseNodePath = "./"+namespace+"General_Info/Product_Image_Characteristics/"
+    rc = float(root.find(baseNodePath+"QUANTIFICATION_VALUE").text)
+    
+    # Convert to TOA reflectance
+    print("TOA reflectance")
+    rToa = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
+    for i in range(inImg.RasterCount):
+        print(i)
+        rToa[:,:,i] = inImg.GetRasterBand(i+1).ReadAsArray().astype(float) / rc 
+    
+    res = saveImg (rToa, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
+    return res    
 
 def darkObjectSubstraction(inImg):
     print("DOS correction")

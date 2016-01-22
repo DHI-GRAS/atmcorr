@@ -51,6 +51,13 @@ def getSensorBandNumber(sensor):
     elif sensor == "L7":
         # mapping of band names to band number for Landsat 7
         coastal = 0; blue = 0; green = 1; yellow = 1; red = 2; redEdge = 2; nir1 = 3; nir2 = 3;
+    elif sensor == "S2A_10m":
+        # mapping of band names to band number for 10 m Sentinel-2A
+        coastal = 0; blue = 0; green = 1; yellow = 1; red = 2; redEdge = 2; nir1 = 7; nir2 = 7;
+    elif sensor == "S2A_60m":
+        # mapping of band names to band number for 10 m Sentinel-2A
+        # assumes that bands with higher spatial resolution have been resampled to 60 m
+        coastal = 0; blue = 1; green = 2; yellow = 2; red = 3; redEdge = 4; nir1 = 7; nir2 = 9; 
     else:
         raise Exception("Unknown sensor!")        
         
@@ -93,11 +100,16 @@ def viewingGeometryL8(metadataFile):
     
     return radians(sunZen), radians(satZen)
 
+def viewingGeometryS2A(metadataFile):
+    return None, None
+
 def viewingGeometry(metadataFile, sensor):
     if sensor == "WV2" or sensor == "WV3" or sensor == "GE1":
         return viewingGeometryWV2(metadataFile)
     elif sensor == "L8" or sensor == "L7":
         return viewingGeometryL8(metadataFile)
+    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+        return viewingGeometryS2A(metadataFile)
 
 def mask(img, mask, maskValue = 0):
     maskData = mask.GetRasterBand(1).ReadAsArray()
@@ -374,6 +386,8 @@ def resampleBandFilters(bandFilter, startWV, endWV, resolution):
 def readBandFiltersFromCSV(csvFilename, sensor, isPan):
     # create empty lists for all the possible bands    
     pan = []; coastal = []; blue = []; green = []; yellow = []; red = []; rededge = []; nir1 = []; nir2 = []; wavelength = []    
+    # S2 has some extra bands
+    rededge2 = []; rededge3 = []; nir3= []; swir1 = []; swir2 = []; swir3 = []  
     
     # read in the data from CSV file    
     with open(csvFilename, 'r') as csvFile:
@@ -410,8 +424,21 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
                 green.append(float(line["L7B2Green"]))
                 red.append(float(line["L7B3Red"]))
                 nir1.append(float(line["L7B4NIR"]))
-                                
-                
+            elif sensor == "S2A_10m" or sensor == "S2A_60m":
+                wavelength.append(float(line["SR_WL"]))
+                coastal.append(float(line["SR_AV_B1"]))
+                blue.append(float(line["SR_AV_B2"]))
+                green.append(float(line["SR_AV_B3"]))
+                red.append(float(line["SR_AV_B4"]))
+                rededge.append(float(line["SR_AV_B5"]))
+                rededge2.append(float(line["SR_AV_B6"]))
+                rededge3.append(float(line["SR_AV_B7"]))
+                nir1.append(float(line["SR_AV_B8"]))
+                nir2.append(float(line["SR_AV_B8A"]))                                
+                nir3.append(float(line["SR_AV_B9"]))
+                swir1.append(float(line["SR_AV_B10"]))
+                swir2.append(float(line["SR_AV_B11"]))
+                swir3.append(float(line["SR_AV_B12"]))
     
     # collect bands specific for each sensor and start and end wavelenghts            
     startWV = wavelength[0]
@@ -434,6 +461,8 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
             bandFilters = [blue, green, red, nir1]
         else:
             bandFilters = [pan]
+    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+        bandFilters = [coastal, blue, green, red, rededge, rededge2, rededge3, nir1, nir2, nir3, swir1, swir2, swir3]
             
     return startWV, endWV, bandFilters
 

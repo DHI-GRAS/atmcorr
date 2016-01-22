@@ -44,7 +44,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
 
     SATELLITE = 'SATELLITE'
     SATELLITES = ['WorldView-2', 'WorldView-3', 'Landsat-8', 'Landsat-7',
-                  'Pleiades-A', 'Pleiades-B', 'SPOT-6']
+                  'Pleiades-A', 'Pleiades-B', 'SPOT-6', 'Sentinel-2A, 10m', 'Sentinel-2A, 60m']
     DN_FILE = 'DN_FILE'
     METAFILE = 'METAFILE'
     PANCHROMATIC = 'PANCHROMATIC'
@@ -85,7 +85,7 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         # The first thing to do is retrieve the values of the parameters
         # entered by the user
         
-        sensorList = ["WV2", "WV3", "L8", "L7", "PHR1A", "PHR1B", "SPOT6"]
+        sensorList = ["WV2", "WV3", "L8", "L7", "PHR1A", "PHR1B", "SPOT6", "S2A_10m", "S2A_60m"]
         methodList = ["6S", "DOS", "TOA", "RAD"]
         atmProfList = ["No Aerosols", "Continental", "Maritime", "Urban", "Desert", "BiomassBurning", "Stratospheric"]
         

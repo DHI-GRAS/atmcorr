@@ -248,6 +248,18 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
                     day = int(match.group(3))
                     UT = float(match.group(4)) + float(match.group(5))/60 + float(match.group(6))/3600
                 break
+    if sensor == "S2A_10m" or sensor == "S2A_60m":
+        tree = ET.parse(metadataPath)
+        root = tree.getroot()
+        namespace = root.tag.split('}')[0]+'}'
+        dateTimeStr = root.find("./"+namespace+"General_Info/Product_Info/PRODUCT_START_TIME").text
+        match = re.match('(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.*', dateTimeStr)
+        if match:
+            year = int(match.group(1))
+            month = int(match.group(2))
+            day = int(match.group(3))
+            UT = float(match.group(4)) + float(match.group(5))/60 + float(match.group(6))/3600
+        
     date = datetime.date(year, month, day)        
     
     #######################################################

@@ -81,6 +81,8 @@ def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone
         readGeometryPHR1(metadataFile, s)
     elif sensor == "L8" or sensor == "L7":
         readGeometryL8(metadataFile, s, extent)
+    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+        readGeometryS2(metadataFile, s)
 
     ##############################################################
     # Set 6S band filters   
@@ -364,7 +366,53 @@ def readGeometryL8(metadataFile, model6S, extent):
     s.geometry.day = day
     s.geometry.month = month
                 
-                
-                
+def readGeometryS2(metadataFile, model6S):
+
+    # The metadata file with observation geometry is located in the GRANULE folder
+    baseDir = os.path.join(os.path.dirname(metadataFile), "GRANULE")    
+    dirs = os.listdir(baseDir)
+    for d in dirs:
+        if os.path.isdir(os.path.join(baseDir, d)) and "S2" in d:
+            metadataFile = [f for f in os.listdir(os.path.join(baseDir, d)) if f.endswith('.xml')][0]
+            metadataFile = os.path.join(baseDir, d, metadataFile)
+            break
+
+    tree = ET.parse(metadataFile)
+    root = tree.getroot()
+    namespace = root.tag.split('}')[0]+'}'
+    baseNodePath = "./"+namespace+"Geometric_Info/Tile_Angles/"
+    sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle"
+    sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle"
+    zenithNodeName = "ZENITH_ANGLE"
+    azimuthNodeName = "AZIMUTH_ANGLE"
+    sensingDateNodeName = "./"+namespace+"General_Info/SENSING_TIME"
+    dayMonthRegex = "\d{4}-(\d{2})-(\d{2})T"
+    
+    month = 0; day = 0; sunZen = 0.0; sunAz = 0.0; satZen = 0.0; satAz = 0.0;    
+    
+    sunGeometryNode = root.find(sunGeometryNodeName)
+    sunZen = float(sunGeometryNode.find(zenithNodeName).text)
+    sunAz = float(sunGeometryNode.find(azimuthNodeName).text)
+    
+    # Assume that all bands have the same angles (they differ slightly)
+    sensorGeometryNode = root.find(sensorGeometryNodeName)
+    sensorZen = float(sensorGeometryNode.find(zenithNodeName).text)
+    sensorAz = float(sensorGeometryNode.find(azimuthNodeName).text)
+                 
+    dateTime = root.find(sensingDateNodeName).text
+    match = re.match(dayMonthRegex, dateTime)
+    if match:
+        month = int(match.group(1))
+        day = int(match.group(2))  
+    
+    s = model6S    
+    s.geometry = Geometry.User()
+    s.geometry.solar_z = sunZen
+    s.geometry.solar_a = sunAz
+    s.geometry.view_z = sensorZen
+    s.geometry.view_a = sensorAz
+    s.geometry.day = day
+    s.geometry.month = month
+            
 if __name__ == "__main__":
     atmCorr6S_WV2("\\\\DKCPH1-STOR.DHI.DK\\Projects\\18800137\\Metohi_data\\053660695010_01\\053660695010_01_P001_MUL\\13SEP19094612-M2AS-053660695010_01_P001.IMD")
