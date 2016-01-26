@@ -352,6 +352,16 @@
          <string>SPOT-6</string>
         </property>
        </item>
+       <item>
+        <property name="text">
+         <string>Sentinel-2A, 10m</string>
+        </property>
+       </item>
+       <item>
+        <property name="text">
+         <string>Sentinel-2A, 60m</string>
+        </property>
+       </item>
       </widget>
      </item>
      <item row="7" column="2">

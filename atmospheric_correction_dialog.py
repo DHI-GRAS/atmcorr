@@ -60,7 +60,7 @@ class atmCorrectionDialog(QtGui.QDialog, FORM_CLASS):
         
     def satellite(self):
         index = self.comboBox_satellite.currentIndex()
-        sensorList = ["WV2", "WV3", "L8", "L7", "PHR1A", "PHR1B", "SPOT6"]
+        sensorList = ["WV2", "WV3", "L8", "L7", "PHR1A", "PHR1B", "SPOT6", "S2A_10m", "S2A_60m"]
         return sensorList[index]
 
     def method(self):

@@ -387,7 +387,7 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
     # create empty lists for all the possible bands    
     pan = []; coastal = []; blue = []; green = []; yellow = []; red = []; rededge = []; nir1 = []; nir2 = []; wavelength = []    
     # S2 has some extra bands
-    rededge2 = []; rededge3 = []; nir3= []; swir1 = []; swir2 = []; swir3 = []  
+    rededge2 = []; rededge3 = []#; nir3= []; swir1 = []; swir2 = []; swir3 = []  
     
     # read in the data from CSV file    
     with open(csvFilename, 'r') as csvFile:
@@ -435,10 +435,10 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
                 rededge3.append(float(line["SR_AV_B7"]))
                 nir1.append(float(line["SR_AV_B8"]))
                 nir2.append(float(line["SR_AV_B8A"]))                                
-                nir3.append(float(line["SR_AV_B9"]))
-                swir1.append(float(line["SR_AV_B10"]))
-                swir2.append(float(line["SR_AV_B11"]))
-                swir3.append(float(line["SR_AV_B12"]))
+#                nir3.append(float(line["SR_AV_B9"]))
+#                swir1.append(float(line["SR_AV_B10"]))
+#                swir2.append(float(line["SR_AV_B11"]))
+#                swir3.append(float(line["SR_AV_B12"]))
     
     # collect bands specific for each sensor and start and end wavelenghts            
     startWV = wavelength[0]
@@ -462,7 +462,7 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
         else:
             bandFilters = [pan]
     elif sensor == "S2A_10m" or sensor == "S2A_60m":
-        bandFilters = [coastal, blue, green, red, rededge, rededge2, rededge3, nir1, nir2, nir3, swir1, swir2, swir3]
+        bandFilters = [coastal, blue, green, red, rededge, rededge2, rededge3, nir1, nir2]#, nir3, swir1, swir2, swir3]
             
     return startWV, endWV, bandFilters
 

@@ -427,14 +427,13 @@ def toaRadianceS2(inImg, metadataFile):
     namespace = root.tag.split('}')[0]+'}'
     z = float(tree.find("./"+namespace+"Geometric_Info/Tile_Angles/Mean_Sun_Angle/ZENITH_ANGLE").text)
     
+    visNirBands = range(1,10)
     # Convert to radiance
     print("Radiometric correction")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(e0)))
-    for i in range(len(e0)):
-        print(i)
-        rToa = inImg.GetRasterBand(i+1).ReadAsArray().astype(float) / rc
+    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(visNirBands)))
+    for i in range(len(visNirBands)):
+        rToa = (inImg.GetRasterBand(i+1).ReadAsArray().astype(float)/16) / rc # The DN values has to be divided by 2^4 (16) to be 12-bit
         radiometricData[:,:,i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
-    
     res = saveImg (radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
     return res
 
