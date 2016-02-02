@@ -13,6 +13,7 @@ from osgeo import gdal
 from atmCorr6S import *
 from bathyUtilities import *
 from atmParametersMODIS import *
+from read_satellite_metadata import *
 ###############################################################################
 def atmProcessingMain(options):
     # Set the band numbers to the appropriate sensor
@@ -34,6 +35,14 @@ def atmProcessingMain(options):
     aeroProfile = options["aeroProfile"]
     tileSize = options["tileSizePixels"]
     aotMultiplier = options["aotMultiplier"] if "aotMultiplier" in options else 1.0
+    
+    # special case for Sentinel-2 - read metadata in to dictionary
+    if sensor in ["S2A_10m", "S2A_60m"]:
+        dnFileName = os.path.split(dnFile)[1]
+        granule = dnFileName[len(dnFileName)-10:-4]
+        metadataFile = readMetadataS2(metadataFile)
+        # Add current granule (used to extract relevant metadata later...)
+        metadataFile.update({'current_granule':granule})
 
     # DN -> Radiance -> Reflectance        
     if atmCorrMethod == "6S":
@@ -401,32 +410,13 @@ def toaReflectanceL8(inImg, metadataFile):
 # Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 # Assumes a L1C product which contains TOA reflectance: https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
 def toaRadianceS2(inImg, metadataFile):
-    
-    # Get parameters from main metadata file
-    tree = ET.parse(metadataFile)
-    root = tree.getroot()
-    namespace = root.tag.split('}')[0]+'}'
-    baseNodePath = "./"+namespace+"General_Info/Product_Image_Characteristics/"
-    rc = float(root.find(baseNodePath+"QUANTIFICATION_VALUE").text)
-    u = float(root.find(baseNodePath+"Reflectance_Conversion/U").text)
-    irradianceNodes = root.findall(baseNodePath+"Reflectance_Conversion/Solar_Irradiance_List/SOLAR_IRRADIANCE")
+    rc = float(metadataFile['reflection_conversion'])
+    u = float(metadataFile['quantification_value'])
     e0 = []
-    for node in irradianceNodes:
-        e0.append(float(node.text))
-    
-    # Zenith angle comes from GRANULE metadata file
-    baseDir = os.path.join(os.path.dirname(metadataFile), "GRANULE")    
-    dirs = os.listdir(baseDir)
-    for d in dirs:
-        if os.path.isdir(os.path.join(baseDir, d)) and "S2" in d:
-            metadataFile = [f for f in os.listdir(os.path.join(baseDir, d)) if f.endswith('.xml')][0]
-            metadataFile = os.path.join(baseDir, d, metadataFile)
-            break
-    tree = ET.parse(metadataFile)
-    root = tree.getroot()
-    namespace = root.tag.split('}')[0]+'}'
-    z = float(tree.find("./"+namespace+"Geometric_Info/Tile_Angles/Mean_Sun_Angle/ZENITH_ANGLE").text)
-    
+    for e in metadataFile['irradiance_values']:
+        e0.append(float(e))
+    z = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
+
     visNirBands = range(1,10)
     # Convert to radiance
     print("Radiometric correction")
@@ -439,14 +429,7 @@ def toaRadianceS2(inImg, metadataFile):
 
 # Assumes a L1C product which contains TOA reflectance: https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
 def toaReflectanceS2(inImg, metadataFile):
-    
-    # Get parameters from main metadata file
-    tree = ET.parse(metadataFile)
-    root = tree.getroot()
-    namespace = root.tag.split('}')[0]+'}'
-    baseNodePath = "./"+namespace+"General_Info/Product_Image_Characteristics/"
-    rc = float(root.find(baseNodePath+"QUANTIFICATION_VALUE").text)
-    
+    rc = float(metadataFile['reflection_conversion'])   
     # Convert to TOA reflectance
     print("TOA reflectance")
     rToa = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))

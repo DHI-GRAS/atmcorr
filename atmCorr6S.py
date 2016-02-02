@@ -367,43 +367,18 @@ def readGeometryL8(metadataFile, model6S, extent):
     s.geometry.month = month
                 
 def readGeometryS2(metadataFile, model6S):
-
-    # The metadata file with observation geometry is located in the GRANULE folder
-    baseDir = os.path.join(os.path.dirname(metadataFile), "GRANULE")    
-    dirs = os.listdir(baseDir)
-    for d in dirs:
-        if os.path.isdir(os.path.join(baseDir, d)) and "S2" in d:
-            metadataFile = [f for f in os.listdir(os.path.join(baseDir, d)) if f.endswith('.xml')][0]
-            metadataFile = os.path.join(baseDir, d, metadataFile)
-            break
-
-    tree = ET.parse(metadataFile)
-    root = tree.getroot()
-    namespace = root.tag.split('}')[0]+'}'
-    baseNodePath = "./"+namespace+"Geometric_Info/Tile_Angles/"
-    sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle"
-    sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle"
-    zenithNodeName = "ZENITH_ANGLE"
-    azimuthNodeName = "AZIMUTH_ANGLE"
-    sensingDateNodeName = "./"+namespace+"General_Info/SENSING_TIME"
+    # Get the granule metadata from metadata dictionary
+    sunZen = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
+    sunAz = float(metadataFile[metadataFile['current_granule']]['sun_azimuth'])
+    sensorZen = float(metadataFile[metadataFile['current_granule']]['sensor_zenit'])
+    sensorAz = float(metadataFile[metadataFile['current_granule']]['sensor_azimuth'])
+    
+    dateTime = metadataFile['product_start']
     dayMonthRegex = "\d{4}-(\d{2})-(\d{2})T"
-    
-    month = 0; day = 0; sunZen = 0.0; sunAz = 0.0; satZen = 0.0; satAz = 0.0;    
-    
-    sunGeometryNode = root.find(sunGeometryNodeName)
-    sunZen = float(sunGeometryNode.find(zenithNodeName).text)
-    sunAz = float(sunGeometryNode.find(azimuthNodeName).text)
-    
-    # Assume that all bands have the same angles (they differ slightly)
-    sensorGeometryNode = root.find(sensorGeometryNodeName)
-    sensorZen = float(sensorGeometryNode.find(zenithNodeName).text)
-    sensorAz = float(sensorGeometryNode.find(azimuthNodeName).text)
-                 
-    dateTime = root.find(sensingDateNodeName).text
     match = re.match(dayMonthRegex, dateTime)
     if match:
         month = int(match.group(1))
-        day = int(match.group(2))  
+        day = int(match.group(2))    
     
     s = model6S    
     s.geometry = Geometry.User()
