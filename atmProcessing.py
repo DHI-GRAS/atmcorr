@@ -422,7 +422,7 @@ def toaRadianceS2(inImg, metadataFile):
     print("Radiometric correction")
     radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(visNirBands)))
     for i in range(len(visNirBands)):
-        rToa = (inImg.GetRasterBand(i+1).ReadAsArray().astype(float)/16) / rc # The DN values has to be divided by 2^4 (16) to be 12-bit
+        rToa = (inImg.GetRasterBand(i+1).ReadAsArray().astype(float)) / rc
         radiometricData[:,:,i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
     res = saveImg (radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
     return res
