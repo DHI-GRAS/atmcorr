@@ -40,7 +40,7 @@ def atmProcessingMain(options):
     if sensor in ["S2A_10m", "S2A_60m"]:
         dnFileName = os.path.split(dnFile)[1]
         granule = dnFileName[len(dnFileName)-10:-4]
-        metadataFile = readMetadataS2(metadataFile)
+        metadataFile = readMetadataS2L1C(metadataFile)
         # Add current granule (used to extract relevant metadata later...)
         metadataFile.update({'current_granule':granule})
 
