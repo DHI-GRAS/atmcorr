@@ -56,6 +56,7 @@ def readMetadataS2L1C(metadataFile):
         sensorZen = root.find(sensorGeometryNodeName+"ZENITH_ANGLE").text
         sensorAz = root.find(sensorGeometryNodeName+"AZIMUTH_ANGLE").text
         EPSG = tree.find("./"+namespace+"Geometric_Info/Tile_Geocoding/HORIZONTAL_CS_CODE").text
+        cldCoverPercent = tree.find("./"+namespace+"Quality_Indicators_Info/Image_Content_QI/CLOUDY_PIXEL_PERCENTAGE").text
         for elem in tree.iter(tag='Size'):
             if elem.attrib['resolution'] == '10':
                 rows_10 = int(elem[0].text)
@@ -83,6 +84,7 @@ def readMetadataS2L1C(metadataFile):
                                   'sensor_zenit':sensorZen,
                                   'sensor_azimuth':sensorAz,
                                   'projection':EPSG,
+                                  'cloudCoverPercent':cldCoverPercent,
                                   'rows_10':rows_10,
                                   'cols_10':cols_10,
                                   'rows_20':rows_20,
