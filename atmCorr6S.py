@@ -24,7 +24,7 @@ sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import *
 
 
-def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, aeroProfile="Continental", extent = None):
+def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1}, sensor="WV2", isPan=False, aeroProfile="Continental", extent = None, adjCorrOutput=False):
 
     # Have different paths to 6S and spectral response curves on Windows where, 
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
@@ -125,11 +125,14 @@ def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone
         
         outputParams.append({'xa': xa, 'xb': xb, 'xc': xc})
         bandNum += 1
-    s = None
+    # If the function is being used in the usual fashion, it returns outputParams, if it is being run in preparation for adjencency correction, the s-class is returned
+    if adjCorrOutput == False:
+        s = None
+        return outputParams
+    else:
+        return s
     
-    return outputParams
-    
-def performAtmCorrection(inImg, correctionParams6S, adjCorr=False,):
+def performAtmCorrection(inImg, correctionParams6S, adjCorr=False, s=None):
     refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount)) 
     pixelSize = inImg.GetGeoTransform()[1] # assume same horizontal and vertical resolution
     

@@ -98,8 +98,15 @@ def atmProcessingMain(options):
                     correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']
                     correctionParams[band]['xc'][y][x] = bandCorrectionParams['xc']                                  
         
-        # Then perform atmospheric correction of the whole image        
-        reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr=adjCorr)
+        # Then perform atmospheric correction of the whole image
+        # If adjecency correction is activated, the s-class is retrieved from the getCorrectionParams6S function first        
+        if adjCorr:
+            adjCorrOutput = True
+            s = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor, isPan=isPan, aeroProfile=aeroProfile, extent = extent, adjCorrOutput=True)
+            reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorrOutput, s)
+        # Otherwise the function is used in the regular way.
+        else:
+            reflectanceImg = performAtmCorrection(radianceImg, correctionParams)
 
         if modisAtmDir:
             deleteDownloadedModisFiles(modisAtmDir)
