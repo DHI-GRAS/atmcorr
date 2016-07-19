@@ -19,76 +19,94 @@ from xml.etree import ElementTree as ET
 import glob
 
 # Constants
-#C_gdalwarp = os.path.join(os.path.dirname(gdal.__file__), 'gdalwarp')
 C_gdalwarp = 'gdalwarp'
+
 if platform.system() == "Windows":
     wd = os.path.dirname(os.path.abspath(__file__))
     C_daac2disk = os.path.join(wd, "dependency", "Daac2Disk_win.exe")
 else:
     wd = os.path.dirname(os.path.abspath(__file__))
-    C_daac2disk = os.path.join(wd, "dependency", "./Daac2Disk_linux")    
+    C_daac2disk = os.path.join(wd, "dependency", "./Daac2Disk_linux")
+
+
+def check_gdal_success(outfile, cmd):
+    """Make sure GDAL command `cmd` succeeded in creating `outfile`"""
+    if not os.path.isfile(outfile):
+        raise RuntimeError('GDAL command \'{}\' did not produce the '
+                'expected output file {}.'.format(cmd, outfile))
+
 
 def reprojectModisSwath(inFilename, outFilename, projectionString):
+    """Reproject MODIS swath"""
+    tempFilename = os.path.join(os.path.dirname(outFilename), 'temp.tif')
+    try:
+        # first reproject to geographic projection
+        cmd = C_gdalwarp
+        cmd += ' -overwrite -dstnodata -9999 -geoloc'
+        cmd += ' -t_srs "+proj=longlat +datum=WGS84 +no_defs" -r bilinear {} {}'.format(inFilename, tempFilename)
 
-    tempFilename = os.path.join(os.path.dirname(outFilename), 'temp.tif')    
-    
-    # first reproject to geographic projection    
-    gdalWarpCmd =  C_gdalwarp+' -overwrite -dstnodata -9999 -geoloc -t_srs "+proj=longlat +datum=WGS84 +no_defs" -r bilinear '+inFilename+' '+tempFilename    
-    proc=subprocess.Popen(gdalWarpCmd,shell=True, stdout=subprocess.PIPE, stdin=subprocess.PIPE,stderr=subprocess.STDOUT, universal_newlines=False)
-    for line in iter(proc.stdout.readline, ""):
-        print line
-    proc.wait()
-    
-    # then to the required one
-    gdalWarpCmd =  C_gdalwarp+' -overwrite -dstnodata -9999 -t_srs '+projectionString+' -r bilinear '+tempFilename+' '+outFilename    
-    proc=subprocess.Popen(gdalWarpCmd,shell=True, stdout=subprocess.PIPE, stdin=subprocess.PIPE,stderr=subprocess.STDOUT, universal_newlines=False)
-    for line in iter(proc.stdout.readline, ""):
-        print line
-    proc.wait()
-    
-    os.remove(tempFilename)
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=False)
+        for line in iter(proc.stdout.readline, ""):
+            print line
+        proc.wait()
+        check_gdal_success(tempFilename)
 
-# extent is of the form [minX, maxY, maxX, minY] in projected values   
-def meanValueOfExtent(inFilename, extent, scaleFactor, fillValue, roiShape = None):
-    # open image and read metadata    
-    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly) 
+        # then to the required one
+        cmd = C_gdalwarp
+        cmd += ' -overwrite -dstnodata -9999 -t_srs {}'.format(projectionString)
+        cmd += ' -r bilinear {} {}'.format(tempFilename, outFilename)
+
+        proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.STDOUT, universal_newlines=False)
+        for line in iter(proc.stdout.readline, ""):
+            print line
+        proc.wait()
+        check_gdal_success(outFilename)
+    finally:
+        try:
+            os.remove(tempFilename)
+        except (WindowsError, OSError):
+            pass
+
+def meanValueOfExtent(inFilename, extent, scaleFactor, fillValue, roiShape=None):
+    # extent is of the form [minX, maxY, maxX, minY] in projected values
+    # open image and read metadata
+    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
     bandNum = inImg.RasterCount
     rasterGeoTrans = inImg.GetGeoTransform()
-    outData = np.zeros((inImg.RasterCount)) 
-     
-      
+    outData = np.zeros((inImg.RasterCount))
+
     # For each band calculate the mean of valid pixels in the extent.
     # If ROI shapefile is given then ignore the extent and clip the image with
     # the ROI instead
     if roiShape:
         clippedImg = u.clipRasterWithShape(inImg, roiShape)
-        for band in range(bandNum):        
-            subsetData = clippedImg.GetRasterBand(band+1).ReadAsArray()    
+        for band in range(bandNum):
+            subsetData = clippedImg.GetRasterBand(band+1).ReadAsArray()
             outData[band] = np.nanmean(subsetData[subsetData!=fillValue]*scaleFactor)
         clippedImg = None
     else:
         # convert extent from geographic to pixel values
-        [minX, maxY, maxX, minY] = extent 
-        pixExtent = u.world2Pixel(rasterGeoTrans, minX, maxY) +  u.world2Pixel(rasterGeoTrans, maxX, minY)          
+        [minX, maxY, maxX, minY] = extent
+        pixExtent = u.world2Pixel(rasterGeoTrans, minX, maxY) +  u.world2Pixel(rasterGeoTrans, maxX, minY)
         for band in range(bandNum):
             inData = inImg.GetRasterBand(band+1).ReadAsArray()
             subsetData = inData[pixExtent[1]:pixExtent[3]+1, pixExtent[0]:pixExtent[2]+1]
             outData[band] = np.nanmean(subsetData[subsetData!=fillValue]*scaleFactor)
-        
+
     inImg = None
     return outData
-    
+
 def percentileValueOfImage(inFilename, scaleFactor, fillValue, percentile = 90):
-    # open image and read metadata    
-    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly) 
+    # open image and read metadata
+    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
     bandNum = inImg.RasterCount
-    
+
     # for each band calculate the max of valid pixels in the image
-    outData = np.zeros((inImg.RasterCount))    
+    outData = np.zeros((inImg.RasterCount))
     for band in range(bandNum):
         inData = inImg.GetRasterBand(band+1).ReadAsArray()
         outData[band] = np.percentile(inData[inData!=fillValue]*scaleFactor, percentile)
-        
+
     inImg = None
     return outData
 
@@ -97,28 +115,28 @@ def percentileValueOfImage(inFilename, scaleFactor, fillValue, percentile = 90):
 def findClosestOverpass(filesMOD, time):
     difference = 10000
     for fileMOD in filesMOD if not isinstance(filesMOD, basestring) else [filesMOD]:
-        match = re.search("A\d{7}\.(\d{2})(\d{2})\.\d{3}\..*\.hdf", fileMOD)        
+        match = re.search("A\d{7}\.(\d{2})(\d{2})\.\d{3}\..*\.hdf", fileMOD)
         overpassTime = float(match.group(1)) + float(match.group(2))/60.0
         if abs(time-overpassTime) < difference:
             difference = abs(time-overpassTime)
             closestFile = fileMOD
-    
+
     return closestFile
 
-# Sort the MODIS file list by how close their overpass is to the given time    
+# Sort the MODIS file list by how close their overpass is to the given time
 def sortByClosestOverpass(filesMOD, time):
-    unsortedDict = {}    
+    unsortedDict = {}
     for fileMOD in filesMOD if not isinstance(filesMOD, basestring) else [filesMOD]:
-        match = re.search("A\d{7}\.(\d{2})(\d{2})\.\d{3}\..*\.hdf", fileMOD)        
+        match = re.search("A\d{7}\.(\d{2})(\d{2})\.\d{3}\..*\.hdf", fileMOD)
         overpassTime = float(match.group(1)) + float(match.group(2))/60.0
         overpassTimeDifference = abs(time-overpassTime)
         unsortedDict[overpassTimeDifference] = fileMOD
         sortedKeys = sorted(unsortedDict.keys())
     return [unsortedDict[key] for key in sortedKeys]
-        
-    
-def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = "", time = -1, roiShape = None):  
-    # Find the MODIS files in MODIS_ATM directory    
+
+
+def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = "", time = -1, roiShape = None):
+    # Find the MODIS files in MODIS_ATM directory
     filesMOD05 = []
     filesMOD04 = []
     filesMOD07 = []
@@ -133,38 +151,38 @@ def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = 
             match = re.match("^M[OY]D07_L2\.A"+yearDoy, name)
             if match:
                 filesMOD07.append(os.path.join(root, name))
-                
+
     if not (len(filesMOD05)>0 and len(filesMOD04)>0 and len(filesMOD07)>0):
         return -1, -1 ,-1
-        
+
     # if time is given then sort the the files by how close the overpass time
-    # is to the given time        
+    # is to the given time
     if time > 0:
         filesMOD05 = sortByClosestOverpass(fileMOD05, time)
         filesMOD04 = sortByClosestOverpass(fileMOD04, time)
         filesMOD07 = sortByClosestOverpass(fileMOD07, time)
-    
+
     fileMOD05 = filesMOD05[0]
     fileMOD04 = filesMOD04[0]
     fileMOD07 = filesMOD07[0]
-    
+
     fieldMOD05 = 'Water_Vapor_Near_Infrared'
     scaleFactorMOD05 = 0.001
     fillValueMOD05 = -9999
-    
+
     fieldMOD04 = 'Optical_Depth_Land_And_Ocean'
     scaleFactorMOD04 = 0.001
-    fillValueMOD04 =  -9999  
-    
+    fillValueMOD04 =  -9999
+
     fieldMOD07 = 'Total_Ozone'
     scaleFactorMOD07 = 0.1 * 0.001 # convert to Dobson and then to cm-atm
     fillValueMOD07 = -9999
-    
+
     # Get the projection and extent (if needed) of the input image
     inImg = gdal.Open(fileImg, gdal.GA_ReadOnly)
     proj = inImg.GetProjection()
     # If neither extent or roiShape are given the use the extent of the
-    # whole input image    
+    # whole input image
     if extent is None and roiShape is None:
         gt=inImg.GetGeoTransform()
         cols = inImg.RasterXSize
@@ -173,36 +191,36 @@ def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = 
         # Extent is projected coordinates of UL and BR pixels
         extent = [ext[0][0], ext[0][1], ext[2][0], ext[2][1]]
     inImg = None
-    
+
     # get AOT
     fileStr = 'HDF4_EOS:EOS_SWATH:"'+fileMOD04+'":mod04:'+fieldMOD04
     outFilename = os.path.join(os.path.dirname(fileMOD04), fieldMOD04+'.tif')
     reprojectModisSwath(fileStr, outFilename, proj)
     aot = meanValueOfExtent(outFilename, extent, scaleFactorMOD04, fillValueMOD04, roiShape)
-    # If can't read the AOT of the extent (most probably due ot cloud) use the 50th percentile AOT of the image    
+    # If can't read the AOT of the extent (most probably due ot cloud) use the 50th percentile AOT of the image
     if math.isnan(aot[0]):
         print("Getting backup AOT!!")
-        aot = percentileValueOfImage(outFilename, scaleFactorMOD04, fillValueMOD04, 50)    
-    
+        aot = percentileValueOfImage(outFilename, scaleFactorMOD04, fillValueMOD04, 50)
+
     # get water vapour
     fileStr = 'HDF4_EOS:EOS_SWATH:"'+fileMOD05+'":mod05:'+fieldMOD05
     outFilename = os.path.join(os.path.dirname(fileMOD05), fieldMOD05+'.tif')
     reprojectModisSwath(fileStr, outFilename, proj)
     wv = meanValueOfExtent(outFilename, extent, scaleFactorMOD05, fillValueMOD05, roiShape)
-     
+
     # get ozone
     fileStr = 'HDF4_EOS:EOS_SWATH:"'+fileMOD07+'":mod07:'+fieldMOD07
     outFilename = os.path.join(os.path.dirname(fileMOD07), fieldMOD07+'.tif')
     reprojectModisSwath(fileStr, outFilename, proj)
     ozone = meanValueOfExtent(outFilename, extent, scaleFactorMOD07, fillValueMOD07, roiShape)
-    
+
     return aot, wv, ozone
-    
+
 def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
-    #####################################################    
-    # Get overpass time from metadata    
+    #####################################################
+    # Get overpass time from metadata
     if sensor == "WV2" or sensor == "WV3":
-        firstLineTimeRegex = "\s*firstLineTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"   
+        firstLineTimeRegex = "\s*firstLineTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"
         earliestAcqTimeRegex = "\s*earliestAcqTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"
         with open(metadataPath, 'r') as metadata:
             for line in metadata:
@@ -216,7 +234,7 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
                      UT = float(match.group(4)) + float(match.group(5))/60 + float(match.group(6))/3600
     if sensor == "L8" or sensor == "L7":
         DATEACQUIREDRegex = "\s*DATE_ACQUIRED\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})"
-        SCENECENTERTIMERegex = "\s*SCENE_CENTER_TIME\s*=\s*\"?(\d{2}):(\d{2}):(.*)Z\"?"		
+        SCENECENTERTIMERegex = "\s*SCENE_CENTER_TIME\s*=\s*\"?(\d{2}):(\d{2}):(.*)Z\"?"
         with open(metadataPath, 'r') as metadata:
             for line in metadata:
                  match = re.match(DATEACQUIREDRegex, line)
@@ -236,9 +254,9 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
         Geometric_Data = root.findall('Geometric_Data')[0]
         Use_Area = Geometric_Data.findall('Use_Area')[0]
         for LGV in Use_Area.findall('Located_Geometric_Values'):
-            # get angles for centre of the image        
+            # get angles for centre of the image
             if LGV.findall('LOCATION_TYPE')[0].text == "Center":
-                # get year month and day            
+                # get year month and day
                 timeStr = LGV.findall('TIME')[0].text
                 dateRegex = '(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})\.*'
                 match = re.match(dateRegex, timeStr)
@@ -256,19 +274,19 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
             month = int(match.group(2))
             day = int(match.group(3))
             UT = float(match.group(4)) + float(match.group(5))/60 + float(match.group(6))/3600
-        
-    date = datetime.date(year, month, day)        
-    
+
+    date = datetime.date(year, month, day)
+
     #######################################################
     # Get ROI as the image extent in geographic coordinates
-    
-    # First get extent in projected coordinates    
+
+    # First get extent in projected coordinates
     inImg = gdal.Open(imagePath, gdal.GA_ReadOnly)
     gt=inImg.GetGeoTransform()
     cols = inImg.RasterXSize
     rows = inImg.RasterYSize
     ext = u.getExtent(gt,cols,rows)
-    
+
     # Then reproject to geographic
     src_srs=osr.SpatialReference()
     src_srs.ImportFromWkt(inImg.GetProjection())
@@ -276,7 +294,7 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
     geo_ext= u.reprojectCoords(ext,src_srs,tgt_srs)
     # get LL and UR pixels
     extent = [geo_ext[1], geo_ext[3]]
-    
+
     #########################################################
     # Call daac2disk to donwload the data
     version = str(6)
@@ -290,11 +308,10 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
         print cmd
         proc = subprocess.Popen(cmd, shell=True, cwd=workingDir, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.communicate(input="y")
-    
+
     inImg = None
     return downloadDir
-        
-    
+
 
 # Clean up
 def deleteDownloadedModisFiles(downloadDir):
@@ -304,44 +321,35 @@ def deleteDownloadedModisFiles(downloadDir):
             os.remove(modisFile)
         except:
             print "could not remove downloaded modisfile: ", modisFile
-    
+
+
 # Prepare daac2disk command to donwload MODIS products
 def prepareDaac2DiskCommand(shortname, version, extent, startDate, endDate, downloadDir):
-    
+
     cmd = ""
-    
+
     # Get MODIS product short name from the select option
     cmd = cmd + "--shortname "+shortname+" --versionid "+version+" "
-    
+
     # Get cooridantes in daac2disk order (xmin, ymin, xmax, ymax) from LL and UR pixels
-    if extent: 
+    if extent:
         cmd = cmd + "--bbox "+str(extent[0][0])+" "+str(extent[0][1])+" "+str(extent[1][0])+" "+str(extent[1][1])+" "
-    
+
     # Parse start and end dates and convert to format expected by daac2disk
     startDate = str(startDate.year)+"-"+str(startDate.month).zfill(2)+"-"+str(startDate.day).zfill(2)
     cmd = cmd + "--begin "+startDate+" "
     endDate = str(endDate.year)+"-"+str(endDate.month).zfill(2)+"-"+str(endDate.day).zfill(2)
     cmd = cmd + "--end "+endDate+" "
-    
+
     # Other settings
     cmd = cmd + "--nometadata "
-    
+
     # Set output directory
     cmd = cmd + "--output \""+downloadDir+"\" "
-    
+
     # A workaround to automatically say "yes" when asked if files should be downloaded
     #cmd = cmd + "< y.txt"
-    
+
     cmd = C_daac2disk +" "+ cmd
-    
+
     return cmd
-    
-#if __name__ == "__main__":
-#    imagePath = r"V:\Levanzo\WV2\054656058010_01\054656058010_01_P001_MUL\15AUG30095954-M3DS-054656058010_01_P001.TIF"
-#    metadataPath = r"V:\Levanzo\WV2\054656058010_01\054656058010_01_P001_MUL\15AUG30095954-M3DS-054656058010_01_P001.IMD"
-#    sensor = "WV2"
-#    aot, wv, ozone = downloadAtmParametersMODIS(imagePath, metadataPath, sensor)    
-#    
-#    print("AOT: "+str(aot))
-#    print("Water Vapour: "+str(wv))
-#    print("Ozone: "+str(ozone))   
