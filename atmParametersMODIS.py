@@ -1,10 +1,3 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Fri Oct 11 11:41:00 2013
-
-@author: Rgu
-"""
-
 from osgeo import gdal, osr
 import subprocess
 import re
@@ -22,7 +15,7 @@ def find_gdal_exe(gdalcmd):
     try:
         if not gdalcmd.endswith('.exe'):
             gdalcmd += '.exe'
-        pattern = os.path.join('C:', 'OSGeo4W*', 'bin', gdalcmd)
+        pattern = os.path.join('C:\\', 'OSGeo4W*', 'bin', gdalcmd)
         cmdpath = glob.glob(pattern)[0]
     except IndexError:
         cmdpath = gdalcmd
