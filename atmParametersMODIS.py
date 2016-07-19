@@ -10,7 +10,6 @@ import subprocess
 import re
 import os
 import bathyUtilities as u
-from gdalconst import *
 import math
 import numpy as np
 import datetime
@@ -18,8 +17,20 @@ import platform
 from xml.etree import ElementTree as ET
 import glob
 
+
+def find_gdal_exe(gdalcmd):
+    try:
+        if not gdalcmd.endswith('.exe'):
+            gdalcmd += '.exe'
+        pattern = os.path.join('C:', 'OSGeo4W*', 'bin', gdalcmd)
+        cmdpath = glob.glob(pattern)[0]
+    except IndexError:
+        cmdpath = gdalcmd
+    print('Using {}'.format(cmdpath))
+    return cmdpath
+
 # Constants
-C_gdalwarp = 'gdalwarp'
+C_gdalwarp = find_gdal_exe('gdalwarp')
 
 if platform.system() == "Windows":
     wd = os.path.dirname(os.path.abspath(__file__))
@@ -49,7 +60,7 @@ def reprojectModisSwath(inFilename, outFilename, projectionString):
         for line in iter(proc.stdout.readline, ""):
             print line
         proc.wait()
-        check_gdal_success(tempFilename)
+        check_gdal_success(tempFilename, cmd)
 
         # then to the required one
         cmd = C_gdalwarp
@@ -60,7 +71,7 @@ def reprojectModisSwath(inFilename, outFilename, projectionString):
         for line in iter(proc.stdout.readline, ""):
             print line
         proc.wait()
-        check_gdal_success(outFilename)
+        check_gdal_success(outFilename, cmd)
     finally:
         try:
             os.remove(tempFilename)
