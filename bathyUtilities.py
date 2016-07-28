@@ -187,7 +187,7 @@ def clipRasterWithShape(rasterImg, shapeImg):
     # get minimum covering extent for the raster and the shape and covert them
     # to pixels
     [minX, maxY, maxX, minY] = calcMinCoveringExtent(rasterImg, shapeRasterImg)
-    rasterSubsetPixs = world2Pixel(rasterGeoTrans, minX, maxY) +  world2Pixel(rasterGeoTrans, maxX, minY)
+    rasterSubsetPixs = world2Pixel(rasterGeoTrans, minX, maxY) + world2Pixel(rasterGeoTrans, maxX, minY)
     shapeRasterSubsetPixs = world2Pixel(shapeRasterGeoTrans, minX, maxY) + world2Pixel(shapeRasterGeoTrans, maxX, minY)
 
 
@@ -198,10 +198,10 @@ def clipRasterWithShape(rasterImg, shapeImg):
     # go through the raster bands, clip the to the minimum covering extent and mask out areas not covered by vector
     maskedData = np.zeros((np.shape(shapeRasterClipped)[0], np.shape(shapeRasterClipped)[1], rasterImg.RasterCount))
     bandNum = rasterImg.RasterCount
-    for band in range(1,bandNum+1):
+    for band in range(1, bandNum+1):
         rasterData = rasterImg.GetRasterBand(band).ReadAsArray()
         clippedData = rasterData[rasterSubsetPixs[1]:rasterSubsetPixs[3], rasterSubsetPixs[0]:rasterSubsetPixs[2]]
-        maskedData[:,:,band-1] = np.where(shapeRasterClipped > 0, clippedData, np.NaN)
+        maskedData[:, :, band-1] = np.where(shapeRasterClipped > 0, clippedData, np.NaN)
 
     # get the geotransform array for the masekd array
     maskedGeoTrans = (ulX, rasterGeoTrans[1], rasterGeoTrans[2], ulY, rasterGeoTrans[4], rasterGeoTrans[5])

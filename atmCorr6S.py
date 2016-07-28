@@ -15,8 +15,9 @@ sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
 
 
-def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone':-1},
-        sensor="WV2", isPan=False, aeroProfile="Continental", extent = None, adjCorrOutput=False):
+def getCorrectionParams6S(metadataFile, inImg, atm={'AOT': -1, 'PWV': -1, 'ozone': -1}, sensor="WV2", isPan=False,
+                          aeroProfile="Continental", extent=None):
+
 
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
@@ -34,11 +35,11 @@ def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone
 
     #########################################################
     # Set 6S BRDF model to 1 m/s wind ocean with typical salinity and pigment concentration
-    #s.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
+    # s.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
 
     #########################################################
     # Set 6S atmospheric and aerosol profile
-    #s.atmos_profile = AtmosProfile.PredefinedType(AtmosProfile.MidlatitudeSummer)
+    # s.atmos_profile = AtmosProfile.PredefinedType(AtmosProfile.MidlatitudeSummer)
     # get from MOD05, MOD07 or MODATML2
     PWV = atm['PWV'] if atm['PWV'] >= 0 else 1.80
     ozone = atm['ozone'] if atm['ozone'] >= 0 else 0.30
@@ -78,59 +79,39 @@ def getCorrectionParams6S(metadataFile, inImg, atm = {'AOT':-1, 'PWV':-1, 'ozone
 
     ##############################################################
     # Set 6S band filters
-    startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(os.path.join(bandFiltersPath, sensor+".txt"), sensor, isPan)
+    startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(os.path.join(bandFiltersPath, sensor + ".txt"),
+                                                                        sensor, isPan)
     # Convert from nanometers to micrometers since this is what 6S needs
-    startWV = startWV/1000.0
-    endWV = endWV/1000.0
+    startWV = startWV / 1000.0
+    endWV = endWV / 1000.0
     # Also need to resample the band filters from 1nm to 2.5nm as this is the highest spectral resolution supported by 6S
     for i, band in enumerate(bandFilters):
         bandFilters[i] = bathyUtilities.resampleBandFilters(band, startWV, endWV, 0.0025)
     #########################################################
     # Run 6S for each spectral band
 
-    bandNum = 1
     outputParams = []
     print "Estimating 6S correction parameters..."
-    for bandFilter in bandFilters:
-        print(bandNum)
+    for bandNum, bandFilter in enumerate(bandFilters):
+        print(bandNum + 1)
         # run 6S and get correction factors
         s.wavelength = Wavelength(startWV, endWV, bandFilter)
-        ################
-        # print inputs to 6S:
-#        print "atm profile: ", s.atmos_profile
-#        print "aero profile: ", s.aero_profile
-#        print "altitude: ", s.altitudes
-#        print "atoms corr: ", s.atmos_corr
-#        print "geometry: ", s.geometry
-#        print "geometry.solar_z: ", s.geometry.solar_z
-#        print "geometry.solar_a: ", s.geometry.solar_a
-#        print "geometry.view_z: ", s.geometry.view_z
-#        print "geometry.view_a: ", s.geometry.view_a
-#        print "geometry.day: ", s.geometry.day
-#        print "geometry.month: ", s.geometry.month
-#        print "wavelength: ", s.wavelength
-        ################
         s.run()
-        xa = s.outputs.coef_xa # inverse of transmitance
-        xb = s.outputs.coef_xb # scattering term of the atmosphere
-        xc = s.outputs.coef_xc # reflectance of atmosphere for isotropic light (albedo)
+        xa = s.outputs.coef_xa  # inverse of transmitance
+        xb = s.outputs.coef_xb  # scattering term of the atmosphere
+        xc = s.outputs.coef_xc  # reflectance of atmosphere for isotropic light (albedo)
 
         outputParams.append({'xa': xa, 'xb': xb, 'xc': xc})
-        bandNum += 1
-    # If the function is being used in the usual fashion, it returns outputParams, if it is being run in preparation for adjencency correction, the s-class is returned
-    if adjCorrOutput == False:
-        s = None
-        return outputParams
-    else:
-        return s
+    return s, outputParams
 
-def performAtmCorrection(inImg, correctionParams6S, adjCorr=False, s=None):
+
+def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
     refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    pixelSize = inImg.GetGeoTransform()[1] # assume same horizontal and vertical resolution
+    pixelSize = inImg.GetGeoTransform()[1]  # assume same horizontal and vertical resolution
 
     for bandNum, correctionParam in enumerate(correctionParams6S):
         # Read uncorrected radiometric data and correct
-        radianceData = inImg.GetRasterBand(bandNum+1).ReadAsArray()
+        radianceData = inImg.GetRasterBand(bandNum + 1).ReadAsArray()
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
@@ -139,22 +120,14 @@ def performAtmCorrection(inImg, correctionParams6S, adjCorr=False, s=None):
         xc = explodeCorrectionParam(correctionParam['xc'], radianceData.shape)
 
         # Perform the atmospheric correction
-        y = np.where(np.isnan(radianceData), np.nan, xa*radianceData - xb)
-        refl[:,:,bandNum] = np.where(np.isnan(y), 0, np.maximum(y/(1.0+xc*y),0.0))
-
+        y = np.where(np.isnan(radianceData), np.nan, xa * radianceData - xb)
+        refl[:, :, bandNum] = np.where(np.isnan(y), 0, np.maximum(y / (1.0 + xc * y), 0.0))
         # Perform adjecency correction if required
-        if adjCorr:
-            try:
-                radius = float(adjCorr)
-            except:
-                radius = 300
-            refl[:,:,bandNum-1] = adjacencyCorrection(refl[:,:,bandNum-1], pixelSize, s, radius)
+        if s is not None:
+            refl[:, :, bandNum] = adjacencyCorrection(refl[:, :, bandNum], pixelSize, s, radius)
 
-
-    res = bathyUtilities.saveImg (refl, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    refl = None
+    res = bathyUtilities.saveImg(refl, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
     radianceData = None
-
     return res
 
 # Interpolate the an array with parameters into the new shape
@@ -185,7 +158,7 @@ def explodeCorrectionParam(param, newShape):
 
 # NEEDS TO BE DOUBLE CHECKED
 # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
-def adjacencyCorrection(refl, pixelSize, s, radius = 1000.0):
+def adjacencyCorrection(refl, pixelSize, s, radius = 1.0):
     print("Adjacency correction")
     # definition below eq (4)
     u_v = cos(radians(s.geometry.view_z))
@@ -201,7 +174,7 @@ def adjacencyCorrection(refl, pixelSize, s, radius = 1000.0):
 
     # Calculate average reflectance of adjacent pixels
     # The adjacency effect can come from pixels within 1km of the central pixel (Verhoef et al., 2003) so  sigma should be half of that in gaussian filter
-    sigma = int(radius/pixelSize)
+    sigma = radius/pixelSize
     adjRefl = filters.gaussian_filter(refl, sigma)
 
     # eq (8)
@@ -216,7 +189,7 @@ def adjacencyCorrection(refl, pixelSize, s, radius = 1000.0):
 
     # Clean up
     refl[mask] = np.NaN
-    refl[refl<0.0] = 0.0
+    refl[refl < 0.0] = 0.0
     return refl
 
 
