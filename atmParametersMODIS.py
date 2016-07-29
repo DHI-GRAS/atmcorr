@@ -9,7 +9,7 @@ import datetime
 import platform
 from xml.etree import ElementTree as ET
 import glob
-
+import logging
 
 def find_gdal_exe(gdalcmd):
     try:
@@ -19,7 +19,7 @@ def find_gdal_exe(gdalcmd):
         cmdpath = glob.glob(pattern)[0]
     except IndexError:
         cmdpath = gdalcmd
-    print('Using {}'.format(cmdpath))
+    logging.debug('Using {}'.format(cmdpath))
     return cmdpath
 
 # Constants
