@@ -175,7 +175,6 @@ def clipRasterWithShape(rasterImg, shapeImg):
     rasterGeoTrans = rasterImg.GetGeoTransform()
 
     # rasterize the shape and get its extent
-    check_gdal_success(outPath, cmd='saveImgByCopy')
     shapeRasterImg = rasterize(shapeImg, 'MEM', rasterGeoTrans[1])
     shapeRasterGeoTrans = shapeRasterImg.GetGeoTransform()
 
