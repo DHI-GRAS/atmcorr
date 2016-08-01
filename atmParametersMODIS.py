@@ -9,21 +9,11 @@ import datetime
 import platform
 from xml.etree import ElementTree as ET
 import glob
-import logging
 
-def find_gdal_exe(gdalcmd):
-    try:
-        if not gdalcmd.endswith('.exe'):
-            gdalcmd += '.exe'
-        pattern = os.path.join('C:\\', 'OSGeo4W*', 'bin', gdalcmd)
-        cmdpath = glob.glob(pattern)[0]
-    except IndexError:
-        cmdpath = gdalcmd
-    logging.debug('Using {}'.format(cmdpath))
-    return cmdpath
+from graspy import gdal_utils
 
 # Constants
-C_gdalwarp = find_gdal_exe('gdalwarp')
+C_gdalwarp = gdal_utils.find_gdal_exe('gdalwarp')
 
 if platform.system() == "Windows":
     wd = os.path.dirname(os.path.abspath(__file__))
