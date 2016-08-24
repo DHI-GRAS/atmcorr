@@ -81,6 +81,7 @@ def getCorrectionParams6S(metadataFile, inImg, atm={'AOT': -1, 'PWV': -1, 'ozone
     # Set 6S band filters
     startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(os.path.join(bandFiltersPath, sensor + ".txt"),
                                                                         sensor, isPan)
+
     # Convert from nanometers to micrometers since this is what 6S needs
     startWV = startWV / 1000.0
     endWV = endWV / 1000.0

@@ -186,8 +186,8 @@ def clipRasterWithShape(rasterImg, shapeImg):
     # get minimum covering extent for the raster and the shape and covert them
     # to pixels
     [minX, maxY, maxX, minY] = calcMinCoveringExtent(rasterImg, shapeRasterImg)
-    rasterSubsetPixs = world2Pixel(rasterGeoTrans, minX, maxY) + world2Pixel(rasterGeoTrans, maxX, minY)
-    shapeRasterSubsetPixs = world2Pixel(shapeRasterGeoTrans, minX, maxY) + world2Pixel(shapeRasterGeoTrans, maxX, minY)
+    rasterSubsetPixs         = world2Pixel(rasterGeoTrans, minX, maxY)      + world2Pixel(rasterGeoTrans, maxX, minY)
+    shapeRasterSubsetPixs    = world2Pixel(shapeRasterGeoTrans, minX, maxY) + world2Pixel(shapeRasterGeoTrans, maxX, minY)
 
 
     # clip the shapeRaster to min covering extent
@@ -197,10 +197,10 @@ def clipRasterWithShape(rasterImg, shapeImg):
     # go through the raster bands, clip the to the minimum covering extent and mask out areas not covered by vector
     maskedData = np.zeros((np.shape(shapeRasterClipped)[0], np.shape(shapeRasterClipped)[1], rasterImg.RasterCount))
     bandNum = rasterImg.RasterCount
-    for band in range(1, bandNum+1):
-        rasterData = rasterImg.GetRasterBand(band).ReadAsArray()
+    for band in range(bandNum):
+        rasterData = rasterImg.GetRasterBand(band+1).ReadAsArray()
         clippedData = rasterData[rasterSubsetPixs[1]:rasterSubsetPixs[3], rasterSubsetPixs[0]:rasterSubsetPixs[2]]
-        maskedData[:, :, band-1] = np.where(shapeRasterClipped > 0, clippedData, np.NaN)
+        maskedData[:, :, band] = np.where(shapeRasterClipped > 0, clippedData, np.NaN)
 
     # get the geotransform array for the masekd array
     maskedGeoTrans = (ulX, rasterGeoTrans[1], rasterGeoTrans[2], ulY, rasterGeoTrans[4], rasterGeoTrans[5])
@@ -211,7 +211,7 @@ def clipRasterWithShape(rasterImg, shapeImg):
 
 
 def openAndClipRaster(inFilename, shapeRoiFilename):
-    inImg = gdal.Open(inFilename , gdal.GA_ReadOnly)
+    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
 
     # If the ROI file is not specified or does not exist then return
     # unclipped image

@@ -19,22 +19,22 @@ from read_satellite_metadata import readMetadataS2L1C
 def atmProcessingMain(options):
     # Set the band numbers to the appropriate sensor
     sensor = options['sensor']
-    coastal, blue, green, yellow, red, redEdge, nir1, nir2 = getSensorBandNumber(sensor)
 
     # Commonly used filenames
-    dnFile = options["dnFile"]
+    dnFile       = options["dnFile"]
     metadataFile = options["metadataFile"]
-    roiFile = options.get("roiFile", "")
+    roiFile      = options.get("roiFile", "")
 
     # Correction options
     atmCorrMethod = options["atmCorrMethod"]
+
     # Make a copy of atm since it will be changing in the code but the original
     # is still required
-    atm = options["atm"].copy()
-    isPan = options["isPan"]
-    adjCorr = options["adjCorr"]
-    aeroProfile = options["aeroProfile"]
-    tileSize = options["tileSizePixels"]
+    atm           = options["atm"].copy()
+    isPan         = options["isPan"]
+    adjCorr       = options["adjCorr"]
+    aeroProfile   = options["aeroProfile"]
+    tileSize      = options["tileSizePixels"]
     aotMultiplier = options.get("aotMultiplier", 1.0)
 
     # special case for Sentinel-2 - read metadata in to dictionary
@@ -89,7 +89,6 @@ def atmProcessingMain(options):
                 print("AOT: " + str(atm['AOT']))
                 print("Water Vapour: " + str(atm['PWV']))
                 print("Ozone: " + str(atm['ozone']))
-
                 s, tileCorrectionParams = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor,
                                                                 isPan=isPan, aeroProfile=aeroProfile, extent=extent)
 
@@ -98,9 +97,6 @@ def atmProcessingMain(options):
                     correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']
                     correctionParams[band]['xc'][y][x] = bandCorrectionParams['xc']
                 if tileSize == 0 and adjCorr:
-                    print "ff"
-                    print tileCorrectionParams
-                    print adjCorr
                     reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr, s)
 
         if tileSize > 0 or not adjCorr:
