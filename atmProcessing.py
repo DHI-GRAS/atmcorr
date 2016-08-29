@@ -11,12 +11,15 @@ from math import cos, radians, pi
 from xml.etree import ElementTree as ET
 from osgeo import gdal
 from atmCorr6S import getCorrectionParams6S, performAtmCorrection
-from bathyUtilities import getSensorBandNumber, getTileExtents, openAndClipRaster, saveImg
 from atmParametersMODIS import downloadAtmParametersMODIS, estimateAtmParametersMODIS, deleteDownloadedModisFiles
 from read_satellite_metadata import readMetadataS2L1C
+import sys
+from graspy.gdal_utils import array_to_gtiff
+from graspy.gdal_utils import openAndClipRaster
+from bathyUtilities import getTileExtents
+import multiprocessing
 
-
-def atmProcessingMain(options):
+def atmProcessingMain(options, log):
     # Set the band numbers to the appropriate sensor
     sensor = options['sensor']
 
@@ -39,8 +42,8 @@ def atmProcessingMain(options):
 
     # special case for Sentinel-2 - read metadata in to dictionary
     if sensor in ["S2A_10m", "S2A_60m"]:
-        dnFileName = os.path.split(dnFile)[1]
-        granule = dnFileName[len(dnFileName) - 10:-4]
+        dnFileName   = os.path.split(dnFile)[1]
+        granule      = dnFileName[len(dnFileName) - 10:-4]
         metadataFile = readMetadataS2L1C(metadataFile)
         # Add current granule (used to extract relevant metadata later...)
         metadataFile.update({'current_granule': granule})
@@ -85,12 +88,12 @@ def atmProcessingMain(options):
                     if not atm['ozone']: atm['ozone'] = ozone
 
                 atm['AOT'] *= aotMultiplier
-
-                print("AOT: " + str(atm['AOT']))
-                print("Water Vapour: " + str(atm['PWV']))
-                print("Ozone: " + str(atm['ozone']))
-                s, tileCorrectionParams = getCorrectionParams6S(metadataFile, radianceImg, atm=atm, sensor=sensor,
-                                                                isPan=isPan, aeroProfile=aeroProfile, extent=extent)
+                log.debug("AOT: " + str(atm['AOT']))
+                log.debug("Water Vapour: " + str(atm['PWV']))
+                log.debug("Ozone: " + str(atm['ozone']))
+                s, tileCorrectionParams = getCorrectionParams6S(metadataFile, atm=atm, sensor=sensor, isPan=isPan,
+                                                                aeroProfile=aeroProfile, extent=extent, log=log,
+                                                                nprocs=options.get("nprocs", multiprocessing.cpu_count()))
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
                     correctionParams[band]['xa'][y][x] = bandCorrectionParams['xa']
@@ -197,22 +200,23 @@ def toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor):
         dosDN = darkObjectSubstraction(inImg)
 
     # apply the radiometric correction factors to input image
-    print("Radiometric correctionWV")
+    sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV'.format(0.0))
     radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
     for band in range(bandNum):
-        print(band + 1)
+        sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV'.format(100*band/float(bandNum-1)))
         rawData = inImg.GetRasterBand(band + 1).ReadAsArray()
         # radiometricData[:,:,band] = np.where(np.logical_and((rawData-dosDN[band])>0, rawData != 65536),rawData-dosDN[band],0)*absCalFactor[band]/effectiveBandwidth[band]
         radiometricData[:, :, band] = np.where(np.logical_and((rawData - dosDN[band]) > 0, rawData < 65536),
                                                rawData - dosDN[band], 0) * absCalFactor[band] / effectiveBandwidth[
                                           band] * (2 - gain[band]) - bias[band]
+    print ""
 
     validMask = np.sum(radiometricData, axis=2)
     # Mark the pixels which have all radiances of 0 as invalid
     invalidMask = np.where(validMask > 0, False, True)
     radiometricData[invalidMask, :] = np.nan
 
-    return saveImg(radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
+    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 def toaReflectanceWV2(inImg, metadataFile):
     """Estimate toa reflectance of radiometric WV2 data ignoric atmospheric, topographic and
@@ -280,8 +284,7 @@ def toaReflectanceWV2(inImg, metadataFile):
         reflectanceData[:, :, band] = np.where(np.isnan(radData), np.nan,
                                                (radData * des ** 2 * pi) / (ssi[band + 1] * cos(sza)))
 
-    res = saveImg(reflectanceData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    return res
+    return array_to_gtiff(reflectanceData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 # Apply radiometric correction to Pleadis image, with DOS atmospheric correction optional.
 def toaRadiancePHR1(inImg, metadataFile, doDOS):
@@ -327,8 +330,8 @@ def toaRadiancePHR1(inImg, metadataFile, doDOS):
     # Mark the pixels which have all radiances of 0 as invalid
     invalidMask = np.where(validMask > 0, False, True)
     radiometricData[invalidMask, :] = np.nan
-    res = saveImg(radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    return res
+
+    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 
 def toaReflectancePHR1(inImg, metadataFile):
@@ -383,7 +386,7 @@ def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
 
     # perform dark object substraction
     if doDOS:
-        rawImg = saveImg(rawData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
+        rawImg = array_to_gtiff(rawData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
         dosDN  = darkObjectSubstraction(rawImg)
         rawImg = None
     else:
@@ -402,10 +405,9 @@ def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
 
     # Mark the pixels which have all radiances of 0 as invalid
     invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask,:] = np.nan
+    radiometricData[invalidMask, :] = np.nan
 
-    res = saveImg(radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    return res
+    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 
 def toaReflectanceL8(inImg, metadataFile):
@@ -426,15 +428,13 @@ def toaRadianceS2(inImg, metadataFile):
     e0 = [float(e) for e in metadataFile['irradiance_values']]
     z  = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
 
-    visNirBands = range(1,10)
     # Convert to radiance
     print("Radiometric correction")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(visNirBands)))
-    for i in range(len(visNirBands)):
+    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, 9))
+    for i in range(9):
         rToa = (inImg.GetRasterBand(i + 1).ReadAsArray().astype(float)) / rc
         radiometricData[:, :, i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
-    res = saveImg(radiometricData, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    return res
+    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 
 def toaReflectanceS2(inImg, metadataFile):
@@ -447,10 +447,9 @@ def toaReflectanceS2(inImg, metadataFile):
     rToa = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
     for i in range(inImg.RasterCount):
         print(i)
-        rToa[:,:,i] = inImg.GetRasterBand(i + 1).ReadAsArray().astype(float) / rc
+        rToa[:, :, i] = inImg.GetRasterBand(i + 1).ReadAsArray().astype(float) / rc
 
-    res = saveImg(rToa, inImg.GetGeoTransform(), inImg.GetProjection(), "MEM")
-    return res
+    return array_to_gtiff(rToa, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 
 def darkObjectSubstraction(inImg):
@@ -458,7 +457,6 @@ def darkObjectSubstraction(inImg):
     dosDN       = []
     tempData    = inImg.GetRasterBand(1).ReadAsArray()
     numElements = np.size(tempData[tempData != 0])
-    tempData    = None
     for band in range(1,inImg.RasterCount+1):
         # use histogram with 2048 bins since WV2 has 11 bit radiometric resolution
         hist, edges = np.histogram(inImg.GetRasterBand(band).ReadAsArray(), bins=2048, range=(1, 2048), density=False)
