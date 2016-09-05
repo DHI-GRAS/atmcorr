@@ -15,10 +15,11 @@ from graspy.gdal_utils import array_to_gtiff
 wd = os.path.dirname(__file__)
 sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
+import time
 
 
-def fun(args):
-    PWV, ozone, bandFilter, aeroProfile, AOT, metadataFile, startWV, endWV = args
+def setup_SixS(args):
+    AOT, PWV, ozone, bandFilter, aeroProfile, metadataFile, startWV, endWV = args
 
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
@@ -26,11 +27,9 @@ def fun(args):
     if platform.system() == "Windows":
         wd = os.path.dirname(__file__)
         PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
-        bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
     else:
         wd = os.path.dirname(__file__)
         PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
-        bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
 
     s = SixS(PATH_6S)
 
@@ -66,6 +65,11 @@ def fun(args):
     readGeometryWV2(metadataFile, s)
 
     s.wavelength = Wavelength(startWV, endWV, bandFilter)
+    return s
+
+
+def fun(args):
+    s = setup_SixS(args)
     s.run()
     xa = s.outputs.coef_xa  # inverse of transmitance
     xb = s.outputs.coef_xb  # scattering term of the atmosphere
@@ -76,88 +80,46 @@ def fun(args):
 
 def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1}, sensor="WV2", isPan=False,
                           aeroProfile="Continental", extent=None, log=None, nprocs=7):
+    start = time.time()
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
     # I run mostly the complied program
     if platform.system() == "Windows":
         wd = os.path.dirname(__file__)
-        PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
         bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
     else:
         wd = os.path.dirname(__file__)
-        PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
         bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
-    s = SixS(PATH_6S)
-
-    #########################################################
-    # Set 6S BRDF model to 1 m/s wind ocean with typical salinity and pigment concentration
-    # s.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
-
-    #########################################################
-    # Set 6S atmospheric and aerosol profile
-    # s.atmos_profile = AtmosProfile.PredefinedType(AtmosProfile.MidlatitudeSummer)
-    # get from MOD05, MOD07 or MODATML2
-    PWV        = atm['PWV']   if atm['PWV']   >= 0 else 1.80
-    ozone      = atm['ozone'] if atm['ozone'] >= 0 else 0.30
-    atm['AOT'] = atm['AOT']   if atm['AOT']   >= 0 else 0.10
 
 
-    s.atmos_profile = AtmosProfile.UserWaterAndOzone(PWV, ozone)
-
-    aeroProfileDict = {"No Aerosols": AeroProfile.NoAerosols,
-                       "Continental": AeroProfile.Continental,
-                       "Maritime": AeroProfile.Maritime,
-                       "Urban": AeroProfile.Urban,
-                       "Desert": AeroProfile.Desert,
-                       "BiomassBurning": AeroProfile.BiomassBurning,
-                       "Stratospheric": AeroProfile.Stratospheric}
-
-    s.aero_profile = AeroProfile.PredefinedType(aeroProfileDict[aeroProfile])
-    # get from MOD04 or MODATML2
-    s.aot550 = atm['AOT']
-
-    #########################################################
-    # Set 6S altitude
-    s.altitudes.set_target_sea_level()
-    s.altitudes.set_sensor_satellite_level()
-
-    #########################################################
-    # Set 6S atmospheric correction
-    s.atmos_corr = AtmosCorr.AtmosCorrLambertianFromReflectance(10)
-
-    #########################################################
-    # Set 6S geometry
-    if sensor == "WV2" or sensor == "WV3":
-        readGeometryWV2(metadataFile, s)
-    elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
-        readGeometryPHR1(metadataFile, s)
-    elif sensor == "L8" or sensor == "L7":
-        readGeometryL8(metadataFile, s, extent)
-    elif sensor == "S2A_10m" or sensor == "S2A_60m":
-        readGeometryS2(metadataFile, s)
-
-    ##############################################################
     # Set 6S band filters
     startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(os.path.join(bandFiltersPath, sensor + ".txt"),
                                                                         sensor, isPan)
 
     # Convert from nanometers to micrometers since this is what 6S needs
-    startWV = startWV / 1000.0
-    endWV = endWV / 1000.0
+    startWV /= 1000.0
+    endWV /= 1000.0
+
     # Also need to resample the band filters from 1nm to 2.5nm as this is the highest spectral resolution supported by 6S
     for i, band in enumerate(bandFilters):
         bandFilters[i] = bathyUtilities.resampleBandFilters(band, startWV, endWV, 0.0025)
-    #########################################################
+
     # Run 6S for each spectral band
 
     pool = multiprocessing.Pool(nprocs)
-    jobArgs = [(PWV, ozone, bandFilter, aeroProfile, atm['AOT'], metadataFile, startWV, endWV) for bandFilter in bandFilters]
+    jobArgs = [(atm['AOT'], atm['PWV'], atm['ozone'], bandFilter, aeroProfile, metadataFile, startWV, endWV) for bandFilter in bandFilters]
     outputParams = []
-    sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S'.format(0.0))
-    for i, res in enumerate(pool.imap(fun, jobArgs), 1):
-        sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S'.format(100 * i / float(len(jobArgs))))
+    sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(0.0, time.time() - start))
+    for i, res in enumerate(pool.imap(fun, jobArgs)):
+        sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(100 * i / float(len(jobArgs)-1),
+                                                                                          time.time() - start))
         outputParams.append(res)
+
+    pool.close()
+    pool.join()
     print ""
+    s = setup_SixS(jobArgs[0])
+    s.run()
     return s, outputParams
 
 
@@ -176,14 +138,14 @@ def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
         xc = explodeCorrectionParam(correctionParam['xc'], radianceData.shape)
 
         # Perform the atmospheric correction
-        y = np.where(np.isnan(radianceData), np.nan, xa * radianceData - xb)
+        y = np.where(radianceData == 0, np.nan, xa * radianceData - xb)
         refl[:, :, bandNum] = np.where(np.isnan(y), 0, np.maximum(y / (1.0 + xc * y), 0.0))
         # Perform adjecency correction if required
         if s is not None:
             refl[:, :, bandNum] = adjacencyCorrection(refl[:, :, bandNum], pixelSize, s, radius)
 
-    radianceData = None
     return array_to_gtiff(refl, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+
 
 # Interpolate the an array with parameters into the new shape
 def explodeCorrectionParam(param, newShape):
@@ -214,10 +176,10 @@ def explodeCorrectionParam(param, newShape):
 # NEEDS TO BE DOUBLE CHECKED
 # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
 def adjacencyCorrection(refl, pixelSize, s, radius = 1.0):
+
     print("Adjacency correction")
     # definition below eq (4)
     u_v = cos(radians(s.geometry.view_z))
-
     tau = s.outputs.optical_depth_total.total
     T_dir = s.outputs.transmittance_global_gas.upward
     T_dif = s.outputs.transmittance_total_scattering.upward
@@ -288,6 +250,7 @@ def readGeometryPHR1(metadataFile, model6S):
     s.geometry.day = day
     s.geometry.month = month
 
+
 def readGeometryWV2(metadataFile, s):
     # read viewing gemotery from WV2 metadata file
     meanSunElRegex = "\s*meanSunEl\s*=\s*(.*);"
@@ -336,6 +299,7 @@ def readGeometryWV2(metadataFile, s):
     s.geometry.view_a = satAz
     s.geometry.day = day
     s.geometry.month = month
+
 
 def readGeometryL8(metadataFile, model6S, extent):
 
@@ -386,6 +350,7 @@ def readGeometryL8(metadataFile, model6S, extent):
     s.geometry.view_a = satAz
     s.geometry.day = day
     s.geometry.month = month
+
 
 def readGeometryS2(metadataFile, model6S):
     # Get the granule metadata from metadata dictionary

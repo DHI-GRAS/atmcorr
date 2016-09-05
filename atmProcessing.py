@@ -19,7 +19,7 @@ from graspy.gdal_utils import openAndClipRaster
 from bathyUtilities import getTileExtents
 import multiprocessing
 
-def atmProcessingMain(options, log):
+def atmProcessingMain(options, log=None):
     # Set the band numbers to the appropriate sensor
     sensor = options['sensor']
 
@@ -83,14 +83,16 @@ def atmProcessingMain(options, log):
                     atm = options["atm"].copy()
                     aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent=extent, yearDoy="",
                                                                  time=-1, roiShape=None)
+                    print aot, pwv, ozone
                     if not atm['AOT']:   atm['AOT'] = aot
                     if not atm['PWV']:   atm['PWV'] = pwv
                     if not atm['ozone']: atm['ozone'] = ozone
 
                 atm['AOT'] *= aotMultiplier
-                log.debug("AOT: " + str(atm['AOT']))
-                log.debug("Water Vapour: " + str(atm['PWV']))
-                log.debug("Ozone: " + str(atm['ozone']))
+                if log is not None:
+                    log.debug("AOT: " + str(atm['AOT']))
+                    log.debug("Water Vapour: " + str(atm['PWV']))
+                    log.debug("Ozone: " + str(atm['ozone']))
                 s, tileCorrectionParams = getCorrectionParams6S(metadataFile, atm=atm, sensor=sensor, isPan=isPan,
                                                                 aeroProfile=aeroProfile, extent=extent, log=log,
                                                                 nprocs=options.get("nprocs", multiprocessing.cpu_count()))
@@ -100,6 +102,7 @@ def atmProcessingMain(options, log):
                     correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']
                     correctionParams[band]['xc'][y][x] = bandCorrectionParams['xc']
                 if tileSize == 0 and adjCorr:
+                    print "ff"
                     reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr, s)
 
         if tileSize > 0 or not adjCorr:
@@ -214,7 +217,7 @@ def toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor):
     validMask = np.sum(radiometricData, axis=2)
     # Mark the pixels which have all radiances of 0 as invalid
     invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask, :] = np.nan
+    radiometricData[invalidMask, :] = 0#np.nan
 
     return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
