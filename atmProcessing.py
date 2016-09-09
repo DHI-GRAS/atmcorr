@@ -15,9 +15,10 @@ from atmParametersMODIS import downloadAtmParametersMODIS, estimateAtmParameters
 from read_satellite_metadata import readMetadataS2L1C
 import sys
 from graspy.gdal_utils import array_to_gtiff
-from graspy.gdal_utils import openAndClipRaster
+from graspy.gdal_utils import cutline_to_shape_name
 from bathyUtilities import getTileExtents
 import multiprocessing
+import time
 
 def atmProcessingMain(options, log=None):
     # Set the band numbers to the appropriate sensor
@@ -51,8 +52,10 @@ def atmProcessingMain(options, log=None):
     # DN -> Radiance -> Reflectance
     if atmCorrMethod == "6S":
         doDOS = False
-        inImg = openAndClipRaster(dnFile, roiFile)
+
+        inImg = cutline_to_shape_name(dnFile, roiFile)
         radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS, isPan=isPan)
+
         inImg = None
         reflectanceImg = None
 
@@ -83,7 +86,7 @@ def atmProcessingMain(options, log=None):
                     atm = options["atm"].copy()
                     aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent=extent, yearDoy="",
                                                                  time=-1, roiShape=None)
-                    print aot, pwv, ozone
+
                     if not atm['AOT']:   atm['AOT'] = aot
                     if not atm['PWV']:   atm['PWV'] = pwv
                     if not atm['ozone']: atm['ozone'] = ozone
@@ -102,7 +105,6 @@ def atmProcessingMain(options, log=None):
                     correctionParams[band]['xb'][y][x] = bandCorrectionParams['xb']
                     correctionParams[band]['xc'][y][x] = bandCorrectionParams['xc']
                 if tileSize == 0 and adjCorr:
-                    print "ff"
                     reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr, s)
 
         if tileSize > 0 or not adjCorr:
@@ -117,7 +119,7 @@ def atmProcessingMain(options, log=None):
             doDOS = True
         else:
             doDOS = False
-        inImg = openAndClipRaster(dnFile, roiFile)
+        inImg = cutline_to_shape_name(dnFile, roiFile)
         if sensor not in ["S2A_10m", "S2A_60m"]:
             radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
             inImg = None
@@ -130,7 +132,7 @@ def atmProcessingMain(options, log=None):
 
     elif atmCorrMethod == "RAD":
         doDOS = False
-        inImg = openAndClipRaster(dnFile, roiFile)
+        inImg = cutline_to_shape_name(dnFile, roiFile)
         radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
         reflectanceImg = radianceImg
 
@@ -203,10 +205,12 @@ def toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor):
         dosDN = darkObjectSubstraction(inImg)
 
     # apply the radiometric correction factors to input image
-    sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV'.format(0.0))
+    start = time.time()
+    sys.stdout.flush()
+    sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV. time: {1:8.2f}'.format(0.0, time.time() - start))
     radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
     for band in range(bandNum):
-        sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV'.format(100*band/float(bandNum-1)))
+        sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV. time: {1:8.2f}'.format(100*band/float(bandNum-1), time.time() - start))
         rawData = inImg.GetRasterBand(band + 1).ReadAsArray()
         # radiometricData[:,:,band] = np.where(np.logical_and((rawData-dosDN[band])>0, rawData != 65536),rawData-dosDN[band],0)*absCalFactor[band]/effectiveBandwidth[band]
         radiometricData[:, :, band] = np.where(np.logical_and((rawData - dosDN[band]) > 0, rawData < 65536),

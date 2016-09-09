@@ -68,19 +68,24 @@ def setup_SixS(args):
     return s
 
 
-def fun(args):
+def fun_SixS(args):
     s = setup_SixS(args)
     s.run()
     xa = s.outputs.coef_xa  # inverse of transmitance
     xb = s.outputs.coef_xb  # scattering term of the atmosphere
     xc = s.outputs.coef_xc  # reflectance of atmosphere for isotropic light (albedo)
 
-    return {'xa': xa, 'xb': xb, 'xc': xc}
+    return {'xa': xa, 'xb': xb, 'xc': xc}, [s.geometry.view_z, s.outputs.optical_depth_total.total,
+            s.outputs.transmittance_global_gas.upward, s.outputs.transmittance_total_scattering.upward]
 
 
 def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1}, sensor="WV2", isPan=False,
-                          aeroProfile="Continental", extent=None, log=None, nprocs=7):
-    start = time.time()
+                          aeroProfile="Continental", extent=None, log=None, nprocs=False):
+
+    if not nprocs:
+        nprocs = multiprocessing.multiprocessing.cpu_count()
+
+
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
     # I run mostly the complied program
@@ -105,28 +110,30 @@ def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
         bandFilters[i] = bathyUtilities.resampleBandFilters(band, startWV, endWV, 0.0025)
 
     # Run 6S for each spectral band
-
     pool = multiprocessing.Pool(nprocs)
-    jobArgs = [(atm['AOT'], atm['PWV'], atm['ozone'], bandFilter, aeroProfile, metadataFile, startWV, endWV) for bandFilter in bandFilters]
-    outputParams = []
+    jobArgs = [(atm['AOT'], atm['PWV'], atm['ozone'], bandFilter, aeroProfile, metadataFile, startWV, endWV)
+               for bandFilter in bandFilters]
+    output = []
+    s = None
+
+    start = time.time()
     sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(0.0, time.time() - start))
-    for i, res in enumerate(pool.imap(fun, jobArgs)):
+    for i, res in enumerate(pool.imap(fun_SixS, jobArgs)):
         sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(100 * i / float(len(jobArgs)-1),
-                                                                                          time.time() - start))
-        outputParams.append(res)
+                                                                           time.time() - start))
+        output.append(res[0])
+        s = res[1]
 
     pool.close()
     pool.join()
     print ""
-    s = setup_SixS(jobArgs[0])
-    s.run()
-    return s, outputParams
-
+    return s,  output
 
 def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
-    refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
+    refl  = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount), dtype='float32')
     pixelSize = inImg.GetGeoTransform()[1]  # assume same horizontal and vertical resolution
-
+    start = time.time()
+    sys.stdout.write('\r  {0:8.2f}% Adjacency   correction 6S. time: {1:8.2f}'.format(0.0, time.time() - start))
     for bandNum, correctionParam in enumerate(correctionParams6S):
         # Read uncorrected radiometric data and correct
         radianceData = inImg.GetRasterBand(bandNum + 1).ReadAsArray()
@@ -143,6 +150,9 @@ def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
         # Perform adjecency correction if required
         if s is not None:
             refl[:, :, bandNum] = adjacencyCorrection(refl[:, :, bandNum], pixelSize, s, radius)
+        sys.stdout.write('\r  {0:8.2f}% Adjacency   correction 6S. time: {1:8.2f}'.format(
+            100 * bandNum / float(len(correctionParams6S) - 1),
+            time.time() - start))
 
     return array_to_gtiff(refl, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
@@ -177,13 +187,16 @@ def explodeCorrectionParam(param, newShape):
 # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
 def adjacencyCorrection(refl, pixelSize, s, radius = 1.0):
 
-    print("Adjacency correction")
     # definition below eq (4)
+    u_v, tau,  T_dir, T_dif = cos(radians(s[0])), s[1], s[2], s[3]
+    T = 1 - ((1 - T_dif) + (1 - T_dir))
+    """
     u_v = cos(radians(s.geometry.view_z))
     tau = s.outputs.optical_depth_total.total
     T_dir = s.outputs.transmittance_global_gas.upward
     T_dif = s.outputs.transmittance_total_scattering.upward
     T= 1 - ((1-T_dif) + (1-T_dir))
+    """
 
     # Fill in any NaN values, particularly at the edges of the image
     mask = np.isnan(refl)
