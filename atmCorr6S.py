@@ -10,12 +10,12 @@ from xml.etree import ElementTree as ET
 import sys
 import multiprocessing
 from graspy.gdal_utils import array_to_gtiff
+import time
 
 # import Py6S - should be implmented in a better way
-wd = os.path.dirname(__file__)
-sys.path.append(os.path.join(wd, "dependency"))
+#wd = os.path.dirname(__file__)
+#sys.path.append(os.path.join(wd, "dependency"))
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
-import time
 
 
 def setup_SixS(args):
@@ -24,12 +24,9 @@ def setup_SixS(args):
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
     # I run mostly the complied program
-    if platform.system() == "Windows":
-        wd = os.path.dirname(__file__)
-        PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
-    else:
-        wd = os.path.dirname(__file__)
-        PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
+
+    wd = os.path.dirname(__file__)
+    PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
 
     s = SixS(PATH_6S)
 
@@ -83,25 +80,17 @@ def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
                           aeroProfile="Continental", extent=None, log=None, nprocs=False):
 
     if not nprocs:
-        nprocs = multiprocessing.multiprocessing.cpu_count()
+        nprocs = multiprocessing.cpu_count()
 
+    if getattr(sys, 'frozen', False):
+        application_path = os.path.dirname(sys.executable)
+    elif __file__:
+        application_path = os.path.dirname(__file__)
 
-    # Have different paths to 6S and spectral response curves on Windows where,
-    # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
-    # I run mostly the complied program
-    if platform.system() == "Windows":
-        wd = os.path.dirname(__file__)
-        bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
-    else:
-        wd = os.path.dirname(__file__)
-        bandFiltersPath = os.path.join(wd, 'dependency', 'sensorResponseCurves')
-
+    path = os.path.join(application_path, 'dependency', 'sensorResponseCurves', sensor + ".txt")
 
     # Set 6S band filters
-    startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(os.path.join(bandFiltersPath, sensor + ".txt"),
-                                                                        sensor, isPan)
-
-    # Convert from nanometers to micrometers since this is what 6S needs
+    startWV, endWV, bandFilters = bathyUtilities.readBandFiltersFromCSV(path, sensor, isPan)
     startWV /= 1000.0
     endWV /= 1000.0
 
@@ -129,6 +118,7 @@ def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
     print ""
     return s,  output
 
+
 def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
     refl  = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount), dtype='float32')
     pixelSize = inImg.GetGeoTransform()[1]  # assume same horizontal and vertical resolution
@@ -153,6 +143,7 @@ def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
         sys.stdout.write('\r  {0:8.2f}% Adjacency   correction 6S. time: {1:8.2f}'.format(
             100 * bandNum / float(len(correctionParams6S) - 1),
             time.time() - start))
+
 
     return array_to_gtiff(refl, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 

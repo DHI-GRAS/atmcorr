@@ -62,7 +62,6 @@ class Wavelengths:
             s.outputs = None
             a = copy.deepcopy(s)
             a.wavelength = Wavelength(wv)
-            print(wv)
             a.run()
             if output_name is None:
                 return a.outputs

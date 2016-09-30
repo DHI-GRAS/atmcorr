@@ -54,6 +54,7 @@ def atmProcessingMain(options, log=None):
         doDOS = False
 
         inImg = cutline_to_shape_name(dnFile, roiFile)
+
         radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS, isPan=isPan)
 
         inImg = None
