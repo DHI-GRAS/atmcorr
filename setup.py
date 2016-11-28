@@ -4,7 +4,7 @@ from distutils.core import setup
 
 setup(name='atmospheric_correction',
       version='0.1',
-      description='atmospheric_ correction tool kid',
+      description='atmospheric_correction toolkit',
       author='Jonas Solvsteen',
       author_email='josl@dhi-gras.com',
       url='https://www.dhi-gras.com',
