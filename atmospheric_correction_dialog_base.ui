@@ -295,11 +295,6 @@
       <widget class="QComboBox" name="comboBox_method">
        <item>
         <property name="text">
-         <string>6S</string>
-        </property>
-       </item>
-       <item>
-        <property name="text">
          <string>DOS</string>
         </property>
        </item>
