@@ -53,7 +53,6 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
     ATMOSPHERIC_PROFILE = 'ATMOSPHERIC_PROFILE'
     ATMOSPHERIC_PROFILES = ['No aerosols', 'Continental', 'Maritime', 'Urban',
                             'Desert', 'Biomass burning', 'Stratospheric']
-    DOWNLOAD_MODIS = 'DOWNLOAD_MODIS'
     AOT = 'AOT'
     PWV = 'PWV'
     OZONE = 'OZONE'
@@ -73,7 +72,6 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         self.addParameter(ParameterBoolean(self.PANCHROMATIC, 'Panchromatic', default=False))
         self.addParameter(ParameterSelection(self.METHOD, 'Method', self.METHODS))
         self.addParameter(ParameterSelection(self.ATMOSPHERIC_PROFILE, 'Atmospheric profile', self.ATMOSPHERIC_PROFILES))
-#        self.addParameter(ParameterBoolean(self.DOWNLOAD_MODIS, 'download modis'))
         self.addParameter(ParameterNumber(self.AOT, 'aot'))
         self.addParameter(ParameterNumber(self.PWV, 'pwv'))
         self.addParameter(ParameterNumber(self.OZONE, 'ozone'))

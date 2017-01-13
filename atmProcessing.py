@@ -11,7 +11,6 @@ from math import cos, radians, pi
 from xml.etree import ElementTree as ET
 from osgeo import gdal
 from bathyUtilities import *
-from atmParametersMODIS import *
 from read_satellite_metadata import *
 ###############################################################################
 def atmProcessingMain(options):
