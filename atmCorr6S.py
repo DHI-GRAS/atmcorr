@@ -1,22 +1,23 @@
+import os
 import re
-import platform
-import numpy as np
+import sys
+import time
+import logging
+import multiprocessing
 from math import exp, cos, radians
+from xml.etree import ElementTree as ET
+
+import numpy as np
 from scipy.ndimage import filters
 from scipy import interpolate
-import bathyUtilities
-import os
-from xml.etree import ElementTree as ET
-import sys
-import multiprocessing
-from graspy.gdal_utils import array_to_gtiff
-import time
 
-# import Py6S - should be implmented in a better way
-#wd = os.path.dirname(__file__)
-#sys.path.append(os.path.join(wd, "dependency"))
+from graspy.gdal_utils import array_to_gtiff
+
+import bathyUtilities
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
 
+
+logger = logging.getLogger('atmProcessing.atmCorr6S')
 
 def setup_SixS(args):
     AOT, PWV, ozone, bandFilter, aeroProfile, metadataFile, startWV, endWV = args
@@ -77,7 +78,7 @@ def fun_SixS(args):
 
 
 def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1}, sensor="WV2", isPan=False,
-                          aeroProfile="Continental", extent=None, log=None, nprocs=False):
+                          aeroProfile="Continental", extent=None, nprocs=False):
 
     if not nprocs:
         nprocs = multiprocessing.cpu_count()

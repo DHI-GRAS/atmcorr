@@ -1,26 +1,27 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Tue Sep 09 12:54:33 2014
-
-@author: rmgu
-"""
-import numpy as np
 import re
 import os
+import sys
+import time
+import logging
+import multiprocessing
 from math import cos, radians, pi
 from xml.etree import ElementTree as ET
+
+import numpy as np
 from osgeo import gdal
+
+from graspy.gdal_utils import array_to_gtiff
+from graspy.gdal_utils import cutline_to_shape_name
+
+from bathyUtilities import getTileExtents
 from atmCorr6S import getCorrectionParams6S, performAtmCorrection
 from atmParametersMODIS import downloadAtmParametersMODIS, estimateAtmParametersMODIS, deleteDownloadedModisFiles
 from read_satellite_metadata import readMetadataS2L1C
-import sys
-from graspy.gdal_utils import array_to_gtiff
-from graspy.gdal_utils import cutline_to_shape_name
-from bathyUtilities import getTileExtents
-import multiprocessing
-import time
 
-def atmProcessingMain(options, log=None):
+
+logger = logging.getLogger('atmProcessing')
+
+def atmProcessingMain(options):
     # Set the band numbers to the appropriate sensor
     sensor = options['sensor']
 
@@ -93,12 +94,11 @@ def atmProcessingMain(options, log=None):
                     if not atm['ozone']: atm['ozone'] = ozone
 
                 atm['AOT'] *= aotMultiplier
-                if log is not None:
-                    log.debug("AOT: " + str(atm['AOT']))
-                    log.debug("Water Vapour: " + str(atm['PWV']))
-                    log.debug("Ozone: " + str(atm['ozone']))
+                logger.debug("AOT: " + str(atm['AOT']))
+                logger.debug("Water Vapour: " + str(atm['PWV']))
+                logger.debug("Ozone: " + str(atm['ozone']))
                 s, tileCorrectionParams = getCorrectionParams6S(metadataFile, atm=atm, sensor=sensor, isPan=isPan,
-                                                                aeroProfile=aeroProfile, extent=extent, log=log,
+                                                                aeroProfile=aeroProfile, extent=extent,
                                                                 nprocs=options.get("nprocs", multiprocessing.cpu_count()))
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
