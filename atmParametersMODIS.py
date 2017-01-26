@@ -1,15 +1,16 @@
-from osgeo import gdal, osr
-import subprocess
 import re
 import os
-import bathyUtilities as u
 import math
-import numpy as np
+import glob
 import datetime
 import platform
+import subprocess
 from xml.etree import ElementTree as ET
-import glob
 
+import numpy as np
+from osgeo import gdal, osr
+
+import bathyUtilities as u
 from graspy import gdal_utils
 
 # Constants

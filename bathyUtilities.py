@@ -1,16 +1,9 @@
-# -*- coding: utf-8 -*-
-"""
-Created on Mon Jul 21 09:30:18 2014
-
-@author: rmgu
-"""
-
-# A quick fix for PyInstaller problem with matplotlib fonts (https://github.com/pyinstaller/pyinstaller/issues/885)
-# A permament solution was pulled to GitHub on 18th November but should wait untill new release of PyInstaller is out
-import sys
 import os
 import re
+import csv
+import sys
 from math import radians, sqrt
+
 # !!
 # NOTE: Two line below must be uncommented if compiling with pyinstaller
 #import matplotlib
@@ -19,7 +12,6 @@ import matplotlib.pyplot as plt
 from osgeo import gdal, ogr, osr
 import numpy as np
 import scipy.stats as st
-import csv
 from scipy.interpolate import interp1d
 
 if not sys.getfilesystemencoding():
@@ -539,4 +531,3 @@ def reprojectCoords(coords,src_srs,tgt_srs):
         x,y,z = transform.TransformPoint(x,y)
         trans_coords.append([x,y])
     return trans_coords
-
