@@ -10,8 +10,8 @@ from xml.etree import ElementTree as ET
 import numpy as np
 from osgeo import gdal
 
-from graspy.gdal_utils import array_to_gtiff
-from graspy.gdal_utils import cutline_to_shape_name
+from gdal_utils.gdal_utils import array_to_gtiff
+from gdal_utils.gdal_utils import cutline_to_shape_name
 
 from bathyUtilities import getTileExtents
 from atmCorr6S import getCorrectionParams6S, performAtmCorrection

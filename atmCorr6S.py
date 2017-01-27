@@ -11,7 +11,7 @@ import numpy as np
 from scipy.ndimage import filters
 from scipy import interpolate
 
-from graspy.gdal_utils import array_to_gtiff
+from gdal_utils.gdal_utils import array_to_gtiff
 
 import bathyUtilities
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry

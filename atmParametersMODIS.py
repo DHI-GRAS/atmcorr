@@ -11,7 +11,7 @@ import numpy as np
 from osgeo import gdal, osr
 
 import bathyUtilities as u
-from graspy import gdal_utils
+from gdal_utils import gdal_utils
 
 # Constants
 C_gdalwarp = gdal_utils.find_gdal_exe('gdalwarp')
