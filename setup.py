@@ -10,4 +10,4 @@ setup(
     package_dir={'atmospheric_correction': ''},
     include_package_data=True,
     install_requires=['gdal_utils'],
-    dependency_links=['https://github.com/DHI-GRAS/gdal_utils.git'])
+    dependency_links=['https://github.com/DHI-GRAS/gdal_utils/tarball/master#egg=gdal_utils-0.1'])
