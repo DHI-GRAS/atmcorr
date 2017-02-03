@@ -1,7 +1,6 @@
 import os
 import re
 import sys
-import time
 import logging
 import multiprocessing
 from math import exp, cos, radians
@@ -10,6 +9,8 @@ from xml.etree import ElementTree as ET
 import numpy as np
 from scipy.ndimage import filters
 from scipy import interpolate
+from tqdm import trange
+from tqdm import tqdm
 
 from gdal_utils.gdal_utils import array_to_gtiff
 
@@ -101,31 +102,24 @@ def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
-    jobArgs = [(atm['AOT'], atm['PWV'], atm['ozone'], bandFilter, aeroProfile, metadataFile, startWV, endWV)
-               for bandFilter in bandFilters]
+    jobs = [(atm['AOT'], atm['PWV'], atm['ozone'], bandFilter, aeroProfile, metadataFile, startWV, endWV)
+            for bandFilter in bandFilters]
+    logger.info('Running {} atmospheric correction jobs on {} processors'.format(len(jobs), nprocs))
     output = []
     s = None
-
-    start = time.time()
-    sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(0.0, time.time() - start))
-    for i, res in enumerate(pool.imap(fun_SixS, jobArgs)):
-        sys.stdout.write('\r  {0:8.2f}% Atmospheric correction 6S. time: {1:8.2f}'.format(100 * i / float(len(jobArgs)-1),
-                                                                           time.time() - start))
+    for res in tqdm(pool.imap(fun_SixS, jobs), desc='Atmospheric Correction 6S', unit='job'):
         output.append(res[0])
         s = res[1]
-
     pool.close()
     pool.join()
-    print ""
-    return s,  output
+    return s, output
 
 
 def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
-    refl  = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount), dtype='float32')
+    refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount), dtype='float32')
     pixelSize = inImg.GetGeoTransform()[1]  # assume same horizontal and vertical resolution
-    start = time.time()
-    sys.stdout.write('\r  {0:8.2f}% Adjacency   correction 6S. time: {1:8.2f}'.format(0.0, time.time() - start))
-    for bandNum, correctionParam in enumerate(correctionParams6S):
+    for bandNum in trange(len(correctionParams6S), desc='performAtmCorrection', unit='band'):
+        correctionParam = correctionParams6S[bandNum]
         # Read uncorrected radiometric data and correct
         radianceData = inImg.GetRasterBand(bandNum + 1).ReadAsArray()
 
@@ -140,12 +134,8 @@ def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
         refl[:, :, bandNum] = np.where(np.isnan(y), 0, np.maximum(y / (1.0 + xc * y), 0.0))
         # Perform adjecency correction if required
         if s is not None:
+            logger.info('Performing adjacency correction for band {} ...'.format(bandNum+1))
             refl[:, :, bandNum] = adjacencyCorrection(refl[:, :, bandNum], pixelSize, s, radius)
-        sys.stdout.write('\r  {0:8.2f}% Adjacency   correction 6S. time: {1:8.2f}'.format(
-            100 * bandNum / float(len(correctionParams6S) - 1),
-            time.time() - start))
-
-
     return array_to_gtiff(refl, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 

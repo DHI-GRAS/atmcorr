@@ -1,7 +1,6 @@
 import re
 import os
 import sys
-import time
 import logging
 import multiprocessing
 from math import cos, radians, pi
@@ -12,6 +11,7 @@ from osgeo import gdal
 
 from gdal_utils.gdal_utils import array_to_gtiff
 from gdal_utils.gdal_utils import cutline_to_shape_name
+from tqdm import trange
 
 from bathyUtilities import getTileExtents
 from atmCorr6S import getCorrectionParams6S, performAtmCorrection
@@ -86,20 +86,25 @@ def atmProcessingMain(options):
                 # different atmospheric parameters for each tile
                 if modisAtmDir:
                     atm = options["atm"].copy()
-                    aot, pwv, ozone = estimateAtmParametersMODIS(dnFile, modisAtmDir, extent=extent, yearDoy="",
-                                                                 time=-1, roiShape=None)
+                    aot, pwv, ozone = estimateAtmParametersMODIS(
+                            dnFile, modisAtmDir, extent=extent, yearDoy="",
+                            time=-1, roiShape=None)
 
-                    if not atm['AOT']:   atm['AOT'] = aot
-                    if not atm['PWV']:   atm['PWV'] = pwv
-                    if not atm['ozone']: atm['ozone'] = ozone
+                    if not atm['AOT']:
+                        atm['AOT'] = aot
+                    if not atm['PWV']:
+                        atm['PWV'] = pwv
+                    if not atm['ozone']:
+                        atm['ozone'] = ozone
 
                 atm['AOT'] *= aotMultiplier
                 logger.debug("AOT: " + str(atm['AOT']))
                 logger.debug("Water Vapour: " + str(atm['PWV']))
                 logger.debug("Ozone: " + str(atm['ozone']))
-                s, tileCorrectionParams = getCorrectionParams6S(metadataFile, atm=atm, sensor=sensor, isPan=isPan,
-                                                                aeroProfile=aeroProfile, extent=extent,
-                                                                nprocs=options.get("nprocs", multiprocessing.cpu_count()))
+                s, tileCorrectionParams = getCorrectionParams6S(
+                        metadataFile, atm=atm, sensor=sensor, isPan=isPan,
+                        aeroProfile=aeroProfile, extent=extent,
+                        nprocs=options.get("nprocs", multiprocessing.cpu_count()))
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
                     correctionParams[band]['xa'][y][x] = bandCorrectionParams['xa']
@@ -109,7 +114,7 @@ def atmProcessingMain(options):
                     reflectanceImg = performAtmCorrection(radianceImg, correctionParams, adjCorr, s)
 
         if tileSize > 0 or not adjCorr:
-            reflectanceImg = performAtmCorrection(radianceImg, correctionParams)
+            reflectanceImg = performAtmCorrection(radianceImg, correctionParams, s=None)
 
         if modisAtmDir:
             deleteDownloadedModisFiles(modisAtmDir)
@@ -141,7 +146,7 @@ def atmProcessingMain(options):
 
 ################################################################################################
 
-def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan = False):
+def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan=False):
     if sensor == "WV2" or sensor == "WV3":
         res = toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor)
     elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
@@ -206,25 +211,22 @@ def toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor):
         dosDN = darkObjectSubstraction(inImg)
 
     # apply the radiometric correction factors to input image
-    start = time.time()
     sys.stdout.flush()
-    sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV. time: {1:8.2f}'.format(0.0, time.time() - start))
     radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    for band in range(bandNum):
-        sys.stdout.write('\r  {0:8.2f}% Radiometric correction WV. time: {1:8.2f}'.format(100*band/float(bandNum-1), time.time() - start))
+    for band in trange(bandNum, desc='Radiometric correction WV', unit='band'):
         rawData = inImg.GetRasterBand(band + 1).ReadAsArray()
         # radiometricData[:,:,band] = np.where(np.logical_and((rawData-dosDN[band])>0, rawData != 65536),rawData-dosDN[band],0)*absCalFactor[band]/effectiveBandwidth[band]
         radiometricData[:, :, band] = np.where(np.logical_and((rawData - dosDN[band]) > 0, rawData < 65536),
                                                rawData - dosDN[band], 0) * absCalFactor[band] / effectiveBandwidth[
                                           band] * (2 - gain[band]) - bias[band]
-    print ""
 
     validMask = np.sum(radiometricData, axis=2)
     # Mark the pixels which have all radiances of 0 as invalid
     invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask, :] = 0#np.nan
+    radiometricData[invalidMask, :] = 0
 
     return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+
 
 def toaReflectanceWV2(inImg, metadataFile):
     """Estimate toa reflectance of radiometric WV2 data ignoric atmospheric, topographic and
@@ -473,5 +475,3 @@ def darkObjectSubstraction(inImg):
                 dosDN.append(i-1)
                 break
     return dosDN
-
-###############################################################################
