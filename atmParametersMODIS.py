@@ -11,17 +11,17 @@ import numpy as np
 from osgeo import gdal, osr
 
 import bathyUtilities as u
-from gdal_utils import gdal_utils
+from gdal_utils import gdal_binaries as gbin
 
 # Constants
-C_gdalwarp = gdal_utils.find_gdal_exe('gdalwarp')
+C_gdalwarp = gbin.find_gdal_exe('gdalwarp')
 
 if platform.system() == "Windows":
     wd = os.path.dirname(os.path.abspath(__file__))
     C_daac2disk = os.path.join(wd, "dependency", "Daac2Disk_win.exe")
 else:
     wd = os.path.dirname(os.path.abspath(__file__))
-    C_daac2disk = os.path.join(wd, "dependency", "./Daac2Disk_linux")
+    C_daac2disk = os.path.join(wd, "dependency", "Daac2Disk_linux")
 
 
 def check_gdal_success(outfile, cmd):
