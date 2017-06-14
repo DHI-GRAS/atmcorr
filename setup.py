@@ -15,4 +15,5 @@ setup(
         'numpy>=1.11.1',
         'scipy>=0.17.1',
         'gdal_utils==0.2'],
-    dependency_links=['git+ssh://git@github.com/DHI-GRAS/gdal_utils.git@v0.2#egg=gdal_utils-0.2'])
+    dependency_links=[
+        'https://github.com/DHI-GRAS/gdal_utils/archive/v0.2.tar.gz#egg=gdal_utils-0.2'])
