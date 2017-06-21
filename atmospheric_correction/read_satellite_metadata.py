@@ -1,20 +1,34 @@
 import os
-from xml.etree import ElementTree as ET
 import glob
+from xml.etree import ElementTree as ET
 
-def readMetadataS2L1C(metadataFile):
-    # Get parameters from main metadata file   
-    ProductName = os.path.split(os.path.dirname(metadataFile))[1]
-    tree = ET.parse(metadataFile)
+
+def _find_granule_metadata_relpath(mtdfile, granule):
+    granuleDir = os.path.join(
+            os.path.dirname(mtdfile), "GRANULE", granule)
+    pattern = os.path.join(granuleDir, '*.xml')
+    try:
+        return glob.glob(pattern)[0]
+    except IndexError:
+        raise RuntimeError(
+                'Unable to find granule metadata files with pattern \'{}\'.'
+                ''.format(pattern))
+
+
+def readMetadataS2L1C(mtdfile, mtdfile_tile=None):
+
+    # Get parameters from main metadata file
+    ProductName = os.path.basename(os.path.dirname(mtdfile))
+    tree = ET.parse(mtdfile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
-    
+
     baseNodePath = "./"+namespace+"General_Info/Product_Info/"
     dateTimeStr = root.find(baseNodePath+"PRODUCT_START_TIME").text
     procesLevel = root.find(baseNodePath+"PROCESSING_LEVEL").text
     spaceCraft = root.find(baseNodePath+"Datatake/SPACECRAFT_NAME").text
     orbitDirection = root.find(baseNodePath+"Datatake/SENSING_ORBIT_DIRECTION").text
-    
+
     baseNodePath = "./"+namespace+"General_Info/Product_Image_Characteristics/"
     quantificationVal = root.find(baseNodePath+"QUANTIFICATION_VALUE").text
     reflectConversion = root.find(baseNodePath+"Reflectance_Conversion/U").text
@@ -22,10 +36,10 @@ def readMetadataS2L1C(metadataFile):
     e0 = []
     for node in irradianceNodes:
         e0.append(node.text)
-    
+
     # save to dictionary
-    metaDict = {}
-    metaDict.update({'product_name':ProductName,
+    metadict = {}
+    metadict.update({'product_name':ProductName,
                      'product_start':dateTimeStr,
                      'processing_level':procesLevel,
                      'spacecraft':spaceCraft,
@@ -34,15 +48,21 @@ def readMetadataS2L1C(metadataFile):
                      'reflection_conversion':reflectConversion,
                      'irradiance_values': e0})
     # granules
-    XML_mask = 'S2?_*.xml'
-    for elem in tree.iter(tag='Granules'):
+    metadict['granules'] = []
+    glist = list(tree.iter(tag='Granules'))
+    for elem in glist:
         granule = elem.attrib['granuleIdentifier']
-        granuleDir = os.path.join(os.path.dirname(metadataFile), "GRANULE", 
-                                  granule)
-        globlist = granuleDir + '/' + XML_mask
-        metadataTile = glob.glob(globlist)[0]
+
+        if mtdfile_tile is not None:
+            if len(glist) > 1:
+                raise ValueError(
+                        'mtdfile_tile should only be used for single-tile '
+                        'products. Fount {}.'.format(len(glist)))
+        else:
+            mtdfile_tile = _find_granule_metadata_relpath(mtdfile, granule)
+
         # read metadata of tile
-        tree = ET.parse(metadataTile)
+        tree = ET.parse(mtdfile_tile)
         root = tree.getroot()
         namespace = root.tag.split('}')[0]+'}'
         # Get sun geometry - use the mean
@@ -50,7 +70,7 @@ def readMetadataS2L1C(metadataFile):
         sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle/"
         sunZen = root.find(sunGeometryNodeName+"ZENITH_ANGLE").text
         sunAz = root.find(sunGeometryNodeName+"AZIMUTH_ANGLE").text
-        # Get sensor geometry - assume that all bands have the same angles 
+        # Get sensor geometry - assume that all bands have the same angles
         # (they differ slightly)
         sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle/"
         sensorZen = root.find(sensorGeometryNodeName+"ZENITH_ANGLE").text
@@ -77,41 +97,45 @@ def readMetadataS2L1C(metadataFile):
             if elem.attrib['resolution'] == '60':
                 ULX_60 = int(elem[0].text)
                 ULY_60 = int(elem[1].text)
-        
-        # save to dictionary
-        metaDict.update({granule[len(granule)-13:-7]:{'sun_zenit':sunZen,
-                                  'sun_azimuth':sunAz,
-                                  'sensor_zenit':sensorZen,
-                                  'sensor_azimuth':sensorAz,
-                                  'projection':EPSG,
-                                  'cloudCoverPercent':cldCoverPercent,
-                                  'rows_10':rows_10,
-                                  'cols_10':cols_10,
-                                  'rows_20':rows_20,
-                                  'cols_20':cols_20,
-                                  'rows_60':rows_60,
-                                  'cols_60':cols_60,
-                                  'ULX_10':ULX_10,
-                                  'ULY_10':ULY_10,
-                                  'ULX_20':ULX_20,
-                                  'ULY_20':ULY_20,
-                                  'ULX_60':ULX_60,
-                                  'ULY_60':ULY_60,}})
-    return metaDict
 
-def readMetadataS2L2A(metadataFile):
-    # Get parameters from main metadata file   
-    ProductName = os.path.split(os.path.dirname(metadataFile))[1]
-    tree = ET.parse(metadataFile)
+        # save to dictionary
+        granulekey = granule[len(granule)-13:-7]
+        metadict['granules'].append(granulekey)
+        metadict.update({
+            granulekey: {
+                'sun_zenit': sunZen,
+                'sun_azimuth': sunAz,
+                'sensor_zenit': sensorZen,
+                'sensor_azimuth': sensorAz,
+                'projection': EPSG,
+                'cloudCoverPercent': cldCoverPercent,
+                'rows_10': rows_10,
+                'cols_10': cols_10,
+                'rows_20': rows_20,
+                'cols_20': cols_20,
+                'rows_60': rows_60,
+                'cols_60': cols_60,
+                'ULX_10': ULX_10,
+                'ULY_10': ULY_10,
+                'ULX_20': ULX_20,
+                'ULY_20': ULY_20,
+                'ULX_60': ULX_60,
+                'ULY_60': ULY_60}})
+    return metadict
+
+def readMetadataS2L2A(mtdfile, mtdfile_tile):
+    # Get parameters from main metadata file
+    ProductName = os.path.basename(os.path.dirname(mtdfile))
+    tree = ET.parse(mtdfile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
-    
+
     baseNodePath = "./"+namespace+"General_Info/L2A_Product_Info/"
     dateTimeStr = root.find(baseNodePath+"PRODUCT_START_TIME").text
     procesLevel = root.find(baseNodePath+"PROCESSING_LEVEL").text
     spaceCraft = root.find(baseNodePath+"Datatake/SPACECRAFT_NAME").text
     orbitDirection = root.find(baseNodePath+"Datatake/SENSING_ORBIT_DIRECTION").text
-    
+
     baseNodePath = "./"+namespace+"General_Info/L2A_Product_Image_Characteristics/"
     quantificationValBOA = root.find(baseNodePath+"L1C_L2A_Quantification_Values_List/L2A_BOA_QUANTIFICATION_VALUE").text
     quantificationValAOT = root.find(baseNodePath+"L1C_L2A_Quantification_Values_List/L2A_AOT_QUANTIFICATION_VALUE").text
@@ -121,10 +145,10 @@ def readMetadataS2L2A(metadataFile):
     e0 = []
     for node in irradianceNodes:
         e0.append(node.text)
-    
+
     # save to dictionary
-    metaDict = {}
-    metaDict.update({'product_name':ProductName,
+    metadict = {}
+    metadict.update({'product_name':ProductName,
                      'product_start':dateTimeStr,
                      'processing_level':procesLevel,
                      'spacecraft':spaceCraft,
@@ -135,15 +159,21 @@ def readMetadataS2L2A(metadataFile):
                      'reflection_conversion':reflectConversion,
                      'irradiance_values': e0})
     # granules
-    XML_mask = 'S2?_*.xml'
-    for elem in tree.iter(tag='Granules'):
+    glist = list(tree.iter(tag='Granules'))
+    metadict['granules'] = []
+    for elem in glist:
         granule = elem.attrib['granuleIdentifier']
-        granuleDir = os.path.join(os.path.dirname(metadataFile), "GRANULE", 
-                                  granule)
-        globlist = granuleDir + '/' + XML_mask
-        metadataTile = glob.glob(globlist)[0]
+
+        if mtdfile_tile is not None:
+            if len(glist) > 1:
+                raise ValueError(
+                        'mtdfile_tile should only be used for single-tile '
+                        'products. Fount {}.'.format(len(glist)))
+        else:
+            mtdfile_tile = _find_granule_metadata_relpath(mtdfile, granule)
+
         # read metadata of tile
-        tree = ET.parse(metadataTile)
+        tree = ET.parse(mtdfile_tile)
         root = tree.getroot()
         namespace = root.tag.split('}')[0]+'}'
         # Get sun geometry - use the mean
@@ -151,7 +181,7 @@ def readMetadataS2L2A(metadataFile):
         sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle/"
         sunZen = root.find(sunGeometryNodeName+"ZENITH_ANGLE").text
         sunAz = root.find(sunGeometryNodeName+"AZIMUTH_ANGLE").text
-        # Get sensor geometry - assume that all bands have the same angles 
+        # Get sensor geometry - assume that all bands have the same angles
         # (they differ slightly)
         sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle/"
         sensorZen = root.find(sensorGeometryNodeName+"ZENITH_ANGLE").text
@@ -177,23 +207,27 @@ def readMetadataS2L2A(metadataFile):
             if elem.attrib['resolution'] == '60':
                 ULX_60 = int(elem[0].text)
                 ULY_60 = int(elem[1].text)
-        
+
         # save to dictionary
-        metaDict.update({granule[len(granule)-13:-7]:{'sun_zenit':sunZen,
-                                  'sun_azimuth':sunAz,
-                                  'sensor_zenit':sensorZen,
-                                  'sensor_azimuth':sensorAz,
-                                  'projection':EPSG,
-                                  'rows_10':rows_10,
-                                  'cols_10':cols_10,
-                                  'rows_20':rows_20,
-                                  'cols_20':cols_20,
-                                  'rows_60':rows_60,
-                                  'cols_60':cols_60,
-                                  'ULX_10':ULX_10,
-                                  'ULY_10':ULY_10,
-                                  'ULX_20':ULX_20,
-                                  'ULY_20':ULY_20,
-                                  'ULX_60':ULX_60,
-                                  'ULY_60':ULY_60,}})
-    return metaDict
+        granulekey = granule[len(granule)-13:-7]
+        metadict['granules'].append(granulekey)
+        metadict.update({
+            granulekey: {
+                'sun_zenit': sunZen,
+                'sun_azimuth': sunAz,
+                'sensor_zenit': sensorZen,
+                'sensor_azimuth': sensorAz,
+                'projection': EPSG,
+                'rows_10': rows_10,
+                'cols_10': cols_10,
+                'rows_20': rows_20,
+                'cols_20': cols_20,
+                'rows_60': rows_60,
+                'cols_60': cols_60,
+                'ULX_10': ULX_10,
+                'ULY_10': ULY_10,
+                'ULX_20': ULX_20,
+                'ULY_20': ULY_20,
+                'ULX_60': ULX_60,
+                'ULY_60': ULY_60}})
+    return metadict

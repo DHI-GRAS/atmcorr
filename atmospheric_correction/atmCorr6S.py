@@ -18,7 +18,7 @@ import bathyUtilities
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
 
 
-logger = logging.getLogger('atmProcessing.atmCorr6S')
+logger = logging.getLogger(__name__)
 
 def setup_SixS(args):
     AOT, PWV, ozone, bandFilter, aeroProfile, metadataFile, startWV, endWV = args

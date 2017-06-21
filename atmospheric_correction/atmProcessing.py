@@ -1,15 +1,15 @@
 import os
+import re
 import logging
 import multiprocessing
 
 from gdal_utils.gdal_utils import cutline_to_shape_name
 
 from bathyUtilities import getTileExtents
-from atmCorr6S import getCorrectionParams6S, performAtmCorrection
-from atmParametersMODIS import downloadAtmParametersMODIS
-from atmParametersMODIS import estimateAtmParametersMODIS
-from atmParametersMODIS import deleteDownloadedModisFiles
+from atmCorr6S import getCorrectionParams6S
+from atmCorr6S import performAtmCorrection
 from read_satellite_metadata import readMetadataS2L1C
+import atmParametersMODIS as modis
 
 from .sensors import sensor_is
 from .toa.radiance import toaRadiance
@@ -18,34 +18,49 @@ from .toa.reflectance import toaReflectance
 
 logger = logging.getLogger('atmProcessing')
 
+
+def _tile_from_fname(fname):
+    fname = os.path.basename(fname)
+    tile = fname[len(fname) - 10:-4]
+    if re.search('\d{2}[A-Z]{3}', tile) is not None:
+        return tile
+    else:
+        raise ValueError(
+                'Unable to get tile from fname \'{}\'.'
+                ''.format(fname))
+
+
 def atmProcessingMain(options):
     # Set the band numbers to the appropriate sensor
     sensor = options['sensor']
 
     # Commonly used filenames
-    dnFile       = options["dnFile"]
-    metadataFile = options["metadataFile"]
-    roiFile      = options.get("roiFile", "")
+    dnFile = options["dnFile"]
+    metadata = options["metadataFile"]
+    roiFile = options.get("roiFile", "")
 
     # Correction options
     atmCorrMethod = options["atmCorrMethod"]
 
-    # Make a copy of atm since it will be changing in the code but the original
-    # is still required
-    atm           = options["atm"].copy()
-    isPan         = options["isPan"]
-    adjCorr       = options["adjCorr"]
-    aeroProfile   = options["aeroProfile"]
-    tileSize      = options["tileSizePixels"]
+    # Make a copy of atm since it will be changing
+    # in the code but the original is still required
+    atm = options["atm"].copy()
+    isPan = options["isPan"]
+    adjCorr = options["adjCorr"]
+    aeroProfile = options["aeroProfile"]
+    tileSize = options["tileSizePixels"]
     aotMultiplier = options.get("aotMultiplier", 1.0)
 
     # special case for Sentinel-2 - read metadata in to dictionary
     if sensor_is(sensor, 'S2'):
-        dnFileName   = os.path.split(dnFile)[1]
-        granule      = dnFileName[len(dnFileName) - 10:-4]
-        metadataFile = readMetadataS2L1C(metadataFile)
+        tile = options.get('tile', None)
+        if tile is None:
+            tile = _tile_from_fname(dnFile)
+        metadata = readMetadataS2L1C(
+                mtdfile=options["metadataFile"],
+                mtdfile_tile=options.get('metadataFile_tile', None))
         # Add current granule (used to extract relevant metadata later...)
-        metadataFile.update({'current_granule': granule})
+        metadata.update({'current_granule': tile})
 
     # DN -> Radiance -> Reflectance
     if atmCorrMethod == "6S":
@@ -53,7 +68,7 @@ def atmProcessingMain(options):
 
         inImg = cutline_to_shape_name(dnFile, roiFile)
 
-        radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS, isPan=isPan)
+        radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS, isPan=isPan)
 
         inImg = None
         reflectanceImg = None
@@ -66,7 +81,7 @@ def atmProcessingMain(options):
         # donwload and use MODIS atmopsheric products
         modisAtmDir = None
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
-            modisAtmDir = downloadAtmParametersMODIS(dnFile, metadataFile, sensor)
+            modisAtmDir = modis.downloadAtmParametersMODIS(dnFile, metadata, sensor)
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
@@ -83,7 +98,7 @@ def atmProcessingMain(options):
                 # different atmospheric parameters for each tile
                 if modisAtmDir:
                     atm = options["atm"].copy()
-                    aot, pwv, ozone = estimateAtmParametersMODIS(
+                    aot, pwv, ozone = modis.estimateAtmParametersMODIS(
                             dnFile, modisAtmDir, extent=extent, yearDoy="",
                             time=-1, roiShape=None)
 
@@ -99,7 +114,7 @@ def atmProcessingMain(options):
                 logger.debug("Water Vapour: " + str(atm['PWV']))
                 logger.debug("Ozone: " + str(atm['ozone']))
                 s, tileCorrectionParams = getCorrectionParams6S(
-                        metadataFile, atm=atm, sensor=sensor, isPan=isPan,
+                        metadata, atm=atm, sensor=sensor, isPan=isPan,
                         aeroProfile=aeroProfile, extent=extent,
                         nprocs=options.get("nprocs", multiprocessing.cpu_count()))
 
@@ -115,7 +130,7 @@ def atmProcessingMain(options):
             reflectanceImg = performAtmCorrection(radianceImg, correctionParams, s=None)
 
         if modisAtmDir:
-            deleteDownloadedModisFiles(modisAtmDir)
+            modis.deleteDownloadedModisFiles(modisAtmDir)
         radianceImg = None
 
     elif atmCorrMethod in ["DOS", "TOA"]:
@@ -125,19 +140,19 @@ def atmProcessingMain(options):
             doDOS = False
         inImg = cutline_to_shape_name(dnFile, roiFile)
         if not sensor_is(sensor, 'S2'):
-            radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
+            radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS)
             inImg = None
-            reflectanceImg = toaReflectance(radianceImg, metadataFile, sensor)
+            reflectanceImg = toaReflectance(radianceImg, metadata, sensor)
             radianceImg = None
         # S2 data is provided in L1C meaning in TOA reflectance
         else:
-            reflectanceImg = toaReflectance(inImg, metadataFile, sensor)
+            reflectanceImg = toaReflectance(inImg, metadata, sensor)
             inImg = None
 
     elif atmCorrMethod == "RAD":
         doDOS = False
         inImg = cutline_to_shape_name(dnFile, roiFile)
-        radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
+        radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS)
         reflectanceImg = radianceImg
 
     return reflectanceImg
