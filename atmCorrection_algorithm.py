@@ -37,8 +37,8 @@ from processing.core.parameters import ParameterRaster
 from processing.core.parameters import ParameterFile
 from processing.core.parameters import ParameterNumber
 
-from atmProcessing import atmProcessingMain
-from bathyUtilities import saveImgByCopy
+from atmospheric_correction.atmProcessing import atmProcessingMain
+from atmospheric_correction.bathyUtilities import saveImgByCopy
 
 class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
 
@@ -58,15 +58,14 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
     PWV = 'PWV'
     OZONE = 'OZONE'
     TILE_SIZE_PIXELS = 'TILE_SIZE_PIXELS'
-    OUTPUT_FILE = 'OUTPUT_FILE' 
-
+    OUTPUT_FILE = 'OUTPUT_FILE'
 
     def defineCharacteristics(self):
         # The name that the user will see in the toolbox
         self.name = 'Atmospheric correction'
         # The branch of the toolbox under which the algorithm will appear
         self.group = 'Tools'
-        
+
         self.addParameter(ParameterSelection(self.SATELLITE, 'Satellite', self.SATELLITES))
         self.addParameter(ParameterRaster(self.DN_FILE, 'DN file', showSublayersDialog=False))
         self.addParameter(ParameterFile(self.METAFILE, 'Metafile', optional=False))
@@ -84,11 +83,11 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         """Here is where the processing itself takes place."""
         # The first thing to do is retrieve the values of the parameters
         # entered by the user
-        
+
         sensorList = ["WV2", "WV3", "L8", "L7", "PHR1A", "PHR1B", "SPOT6", "S2A_10m", "S2A_60m"]
         methodList = ["6S", "DOS", "TOA", "RAD"]
         atmProfList = ["No Aerosols", "Continental", "Maritime", "Urban", "Desert", "BiomassBurning", "Stratospheric"]
-        
+
         options = {}
         # input/output parameters
         options["sensor"] = sensorList[self.getParameterValue(self.SATELLITE)]
@@ -102,14 +101,14 @@ class AtmosphericCorrectionAlgorithm(GeoAlgorithm):
         options["aeroProfile"] = atmProfList[self.getParameterValue(self.ATMOSPHERIC_PROFILE)]
         options["adjCorr"] = 0
         options["tileSizePixels"]=self.getParameterValue(self.TILE_SIZE_PIXELS)
-        
-        reflectanceImg = atmProcessingMain(options) 
+
+        reflectanceImg = atmProcessingMain(options)
         saveImgByCopy(reflectanceImg, options["reflectanceFile"])
-        
+
 
     def atmParam(self):
         atm = {'AOT': self.getParameterValue(self.AOT), 'PWV': self.getParameterValue(self.PWV), 'ozone': self.getParameterValue(self.OZONE)}
         return atm
-           
+
 #    def getCustomParametersDialog(self):
 #        return FieldsCalculatorDialog(self)

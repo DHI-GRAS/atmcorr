@@ -17,8 +17,11 @@ from gdal_utils.gdal_utils import array_to_gtiff
 import bathyUtilities
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength, Geometry
 
-
 logger = logging.getLogger(__name__)
+
+wd = os.path.dirname(__file__)
+PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
+
 
 def setup_SixS(args):
     AOT, PWV, ozone, bandFilter, aeroProfile, metadataFile, startWV, endWV = args
@@ -26,9 +29,6 @@ def setup_SixS(args):
     # Have different paths to 6S and spectral response curves on Windows where,
     # I run the code mostly through Spyder and on Linux (CentOS/RedHat) where
     # I run mostly the complied program
-
-    wd = os.path.dirname(__file__)
-    PATH_6S = os.path.join(wd, 'dependency', "sixsV1.1")
 
     s = SixS(PATH_6S)
 
