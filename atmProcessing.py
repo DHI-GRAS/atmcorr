@@ -15,8 +15,12 @@ from tqdm import trange
 
 from bathyUtilities import getTileExtents
 from atmCorr6S import getCorrectionParams6S, performAtmCorrection
-from atmParametersMODIS import downloadAtmParametersMODIS, estimateAtmParametersMODIS, deleteDownloadedModisFiles
+from atmParametersMODIS import downloadAtmParametersMODIS
+from atmParametersMODIS import estimateAtmParametersMODIS
+from atmParametersMODIS import deleteDownloadedModisFiles
 from read_satellite_metadata import readMetadataS2L1C
+
+from .sensors import sensor_is
 
 
 logger = logging.getLogger('atmProcessing')
@@ -43,7 +47,7 @@ def atmProcessingMain(options):
     aotMultiplier = options.get("aotMultiplier", 1.0)
 
     # special case for Sentinel-2 - read metadata in to dictionary
-    if sensor in ["S2A_10m", "S2A_60m"]:
+    if sensor_is(sensor, 'S2'):
         dnFileName   = os.path.split(dnFile)[1]
         granule      = dnFileName[len(dnFileName) - 10:-4]
         metadataFile = readMetadataS2L1C(metadataFile)
@@ -126,7 +130,7 @@ def atmProcessingMain(options):
         else:
             doDOS = False
         inImg = cutline_to_shape_name(dnFile, roiFile)
-        if sensor not in ["S2A_10m", "S2A_60m"]:
+        if not sensor_is(sensor, 'S2'):
             radianceImg = toaRadiance(inImg, metadataFile, sensor, doDOS=doDOS)
             inImg = None
             reflectanceImg = toaReflectance(radianceImg, metadataFile, sensor)
@@ -147,24 +151,24 @@ def atmProcessingMain(options):
 ################################################################################################
 
 def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan=False):
-    if sensor == "WV2" or sensor == "WV3":
-        res = toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor)
-    elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
-        res = toaRadiancePHR1(inImg, metadataFile, doDOS)
-    elif sensor == "L8" or sensor == "L7":
-        res = toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor)
-    elif sensor == "S2A_10m" or sensor == "S2A_60m":
-        res = toaRadianceS2(inImg, metadataFile)
-    return res
+    if sensor_is(sensor, 'WV'):
+        return toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor)
+    elif sensor_is(sensor, 'PHR'):
+        return toaRadiancePHR1(inImg, metadataFile, doDOS)
+    elif sensor_is(sensor, 'L7L8'):
+        return toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor)
+    elif sensor_is(sensor, 'S2'):
+        return toaRadianceS2(inImg, metadataFile)
+    raise ValueError('')
 
 def toaReflectance(inImg, metadataFile, sensor):
-    if sensor == "WV2" or sensor == "WV3":
+    if sensor_is(sensor, 'WV'):
         res = toaReflectanceWV2(inImg, metadataFile)
-    elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
+    elif sensor_is(sensor, 'PHR'):
         res = toaReflectancePHR1(inImg, metadataFile)
-    elif sensor == "L8" or sensor == "L7":
+    elif sensor_is(sensor, 'L7L8'):
         res = toaReflectanceL8(inImg, metadataFile)
-    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+    elif sensor_is(sensor, 'S2'):
         res = toaReflectanceS2(inImg, metadataFile)
     return res
 
