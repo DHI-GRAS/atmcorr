@@ -1,26 +1,18 @@
 import os
 import re
 import csv
-import sys
 from math import radians, sqrt
 
-# !!
-# NOTE: Two line below must be uncommented if compiling with pyinstaller
-#import matplotlib
-#matplotlib.use('TkAgg')
 import matplotlib.pyplot as plt
 from osgeo import gdal, ogr, osr
 import numpy as np
 import scipy.stats as st
 from scipy.interpolate import interp1d
 
-if not sys.getfilesystemencoding():
-    sys.getfilesystemencoding = lambda: 'UTF-8'
+from atmospheric_correction.sensors import sensor_is
 
 driverOptionsGTiff = ['PREDICTOR=1', 'BIGTIFF=IF_SAFER']  # 'COMPRESS=DEFLATE']
 
-###############################################################################################
-# Utility functions
 
 def check_gdal_success(outfile, cmd):
     """Make sure GDAL command `cmd` succeeded in creating `outfile`"""
@@ -29,40 +21,38 @@ def check_gdal_success(outfile, cmd):
                 'expected output file {}.'.format(cmd, outfile))
 
 
-# Band numbers are in numpy convention (starting from 0). GDAL starts the numbering from 1.
-# Therefore if a band is read using GDAL GetRasterBand the band number should be incremented by 1.
 def getSensorBandNumber(sensor):
-    if sensor == "WV2" or sensor == "WV3":
+    # Band numbers are in numpy convention (starting from 0). GDAL starts the numbering from 1.
+    # Therefore if a band is read using GDAL GetRasterBand the band number should be incremented by 1.
+    if sensor_is(sensor, 'WV'):
         # mapping of band names to band number for WV2
         coastal = 0; blue = 1; green = 2; yellow = 3; red = 4; redEdge = 5; nir1 = 6; nir2 = 7;
-    elif sensor == "GE1":
+    elif sensor_is(sensor, 'GE'):
         # mapping of band names to band number for GE1
         coastal = 0; blue = 0; green = 1; yellow = 1; red = 2; redEdge = 2; nir1 = 3; nir2 = 3;
-    elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
+    elif sensor_is(sensor, 'PHR'):
         # mapping of band names to band number for Pleiades
         coastal = 2; blue = 2; green = 1; yellow = 1; red = 0; redEdge = 0; nir1 = 3; nir2 = 3;
-    elif sensor == "L8":
+    elif sensor_is(sensor, 'L8'):
         # mapping of band names to band number for Landsat 8
         coastal = 0; blue = 1; green = 2; yellow = 2; red = 3; redEdge = 3; nir1 = 4; nir2 = 4;
-    elif sensor == "L7":
+    elif sensor_is(sensor, 'L7'):
         # mapping of band names to band number for Landsat 7
         coastal = 0; blue = 0; green = 1; yellow = 1; red = 2; redEdge = 2; nir1 = 3; nir2 = 3;
-    elif sensor == "S2A_10m":
+    elif sensor_is(sensor, 'S2_10m'):
         # mapping of band names to band number for 10 m Sentinel-2A
         coastal = 0; blue = 0; green = 1; yellow = 1; red = 2; redEdge = 2; nir1 = 7; nir2 = 7;
-    elif sensor == "S2A_60m":
+    elif sensor_is(sensor, 'S2_60m'):
         # mapping of band names to band number for 10 m Sentinel-2A
         # assumes that bands with higher spatial resolution have been resampled to 60 m
         coastal = 0; blue = 1; green = 2; yellow = 2; red = 3; redEdge = 4; nir1 = 7; nir2 = 9;
-    else:
-        raise Exception("Unknown sensor!")
 
     return coastal, blue, green, yellow, red, redEdge, nir1, nir2
 
 
-# read the sun zenith angle and off nadir viewing angle from the WV2 metadata file
-# and return them in radians
 def viewingGeometryWV2(metadataFile):
+    # read the sun zenith angle and off nadir viewing angle from the WV2 metadata file
+    # and return them in radians
     meanSunElRegex = "\s*meanSunEl\s*=\s*(.*);"
     meanOffNadriView = "\s*meanOffNadirViewAngle\s*=\s*(.*);"
     sunEl = 0.0
@@ -79,8 +69,8 @@ def viewingGeometryWV2(metadataFile):
     sunZen = 90.0 - sunEl
     return radians(sunZen), radians(offNadirView)
 
-def viewingGeometryL8(metadataFile):
 
+def viewingGeometryL8(metadataFile):
     # read viewing gemotery from Landsat metadata file
     sunElRegex = "\s*SUN_ELEVATION\s*=\s*(.*)\s*"
     sunEl = 0.0
@@ -88,7 +78,7 @@ def viewingGeometryL8(metadataFile):
 
     with open(metadataFile, 'r') as metadata:
         for line in metadata:
-            match = re.match(sunElRegex , line)
+            match = re.match(sunElRegex, line)
             if match:
                 sunEl = float(match.group(1))
 
@@ -107,18 +97,19 @@ def viewingGeometry(metadataFile, sensor):
     elif sensor == "S2A_10m" or sensor == "S2A_60m":
         return viewingGeometryS2A(metadataFile)
 
-def mask(img, mask, maskValue = 0):
+def mask(img, mask, maskValue=0):
     maskData = mask.GetRasterBand(1).ReadAsArray()
     maskedData = np.zeros((img.RasterYSize, img.RasterXSize, img.RasterCount))
     for band in range(1,img.RasterCount+1):
         maskedData[:,:,band-1] = img.GetRasterBand(band).ReadAsArray()
-    maskedData[maskData==maskValue,:] = 0
-    res = saveImg (maskedData, img.GetGeoTransform(), img.GetProjection(), "MEM")
+    maskedData[maskData == maskValue,:] = 0
+    res = saveImg(maskedData, img.GetGeoTransform(), img.GetProjection(), "MEM")
     return res
 
-# Input: Path to a shape file, filename of output raster and pixel size
-# Output: GDAL object with rasterised shape file
+
 def rasterize(in_vector, out_raster, pixel_size=25):
+    # Input: Path to a shape file, filename of output raster and pixel size
+    # Output: GDAL object with rasterised shape file
     # Define pixel_size and NoData value of new raster
     NoData_value = -9999
 
@@ -147,10 +138,11 @@ def rasterize(in_vector, out_raster, pixel_size=25):
     source_ds = None
     return target_ds
 
-# Input: two GDALDataset
-# Output: minimum covering extent of the two datasets
-# [minX, maxY, maxX, minY] (UL, LR)
+
 def calcMinCoveringExtent(imgA, imgB):
+    # Input: two GDALDataset
+    # Output: minimum covering extent of the two datasets
+    # [minX, maxY, maxX, minY] (UL, LR)
     aGeoTrans = imgA.GetGeoTransform()
     bGeoTrans = imgB.GetGeoTransform()
     minX = max(aGeoTrans[0], bGeoTrans[0])
@@ -159,9 +151,10 @@ def calcMinCoveringExtent(imgA, imgB):
     minY = max(aGeoTrans[3]+imgA.RasterYSize*aGeoTrans[5], bGeoTrans[3]+imgB.RasterYSize*bGeoTrans[5])
     return [minX, maxY, maxX, minY]
 
-# Input: raster file and shape file
-# Output: GDAL object with the clipped raster
+
 def clipRasterWithShape(rasterImg, shapeImg):
+    # Input: raster file and shape file
+    # Output: GDAL object with the clipped raster
     # get the raster pixels size and extent
     #rasterImg = gdal.Open(raster,gdal.GA_ReadOnly)
     rasterGeoTrans = rasterImg.GetGeoTransform()
@@ -216,24 +209,23 @@ def openAndClipRaster(inFilename, shapeRoiFilename):
     shapeRoi = None
     return clippedImg
 
+
 def world2Pixel(geoMatrix, x, y):
-  """
-  Uses a gdal geomatrix (gdal.GetGeoTransform()) to calculate
-  the pixel location of a geospatial coordinate
-  """
-  ulX = geoMatrix[0]
-  ulY = geoMatrix[3]
-  xDist = geoMatrix[1]
-  yDist = geoMatrix[5]
-  rtnX = geoMatrix[2]
-  rtnY = geoMatrix[4]
-  pixel = int(round((x - ulX) / xDist))
-  line = int(round((ulY - y) / xDist))
-  return [pixel, line]
+    """
+    Uses a gdal geomatrix (gdal.GetGeoTransform()) to calculate
+    the pixel location of a geospatial coordinate
+    """
+    ulX = geoMatrix[0]
+    ulY = geoMatrix[3]
+    xDist = geoMatrix[1]
+    yDist = geoMatrix[5]
+    pixel = int(round((x - ulX) / xDist))
+    line = int(round((ulY - y) / yDist))
+    return [pixel, line]
+
 
 # save the data to geotiff or memory
-def saveImg (data, geotransform, proj, outPath, noDataValue = np.nan):
-
+def saveImg(data, geotransform, proj, outPath, noDataValue=np.nan):
     # Start the gdal driver for GeoTIFF
     if outPath == "MEM":
         driver = gdal.GetDriverByName("MEM")
@@ -263,13 +255,14 @@ def saveImg (data, geotransform, proj, outPath, noDataValue = np.nan):
     print('Saved ' +outPath )
     return ds
 
+
 def saveImgByCopy(outImg, outPath):
     driver = gdal.GetDriverByName( "GTiff" )
     savedImg = driver.CreateCopy(outPath, outImg , 0 , driverOptionsGTiff)
     savedImg = None
-    outImg = None
     check_gdal_success(outPath, cmd='saveImgByCopy')
     print('Saved ' +outPath )
+
 
 def plotRasterPointsFromVector(inImg, inVector, fieldName, invertMeasuredPoints, limits = [-30, 0], tide = 0, title = "", qualityImg = None, qualityThresholds = None, figureFilename = ""):
 
@@ -370,6 +363,7 @@ def plotRasterPointsFromVector(inImg, inVector, fieldName, invertMeasuredPoints,
     else:
         plt.show()
 
+
 # resample the given band filter to specified spectral resolution
 def resampleBandFilters(bandFilter, startWV, endWV, resolution):
     x = np.linspace(startWV, endWV, len(bandFilter))
@@ -378,6 +372,7 @@ def resampleBandFilters(bandFilter, startWV, endWV, resolution):
     xnew = np.linspace(startWV, endWV, (endWV-startWV)/resolution + 1)
 
     return f(xnew)
+
 
 # Read band filters from CSV file and assign them to a given sensor
 def readBandFiltersFromCSV(csvFilename, sensor, isPan):
@@ -440,32 +435,29 @@ def readBandFiltersFromCSV(csvFilename, sensor, isPan):
     # collect bands specific for each sensor and start and end wavelenghts
     startWV = wavelength[0]
     endWV = wavelength[-1]
-    if sensor == "WV2" or sensor == "WV3":
-        if not isPan:
-            bandFilters = [coastal, blue, green, yellow, red, rededge, nir1, nir2]
-        else:
-            bandFilters = [pan]
-    elif sensor == "PHR1A" or sensor == "PHR1B" or sensor == "SPOT6":
+
+    if isPan:
+        bandFilters = [pan]
+        return startWV, endWV, bandFilters
+
+    if sensor_is(sensor, 'WV'):
+        bandFilters = [coastal, blue, green, yellow, red, rededge, nir1, nir2]
+    elif sensor_is(sensor, 'PHR'):
         # the order of Pleadis bands is like below (RGBN), not like indicated in the metadata file (BGRN)
         bandFilters = [red, green, blue, nir1]
-    elif sensor == "L8":
-        if not isPan:
-            bandFilters = [coastal, blue, green, red, nir1]
-        else:
-            bandFilters = [pan]
-    elif sensor == "L7":
-        if not isPan:
-            bandFilters = [blue, green, red, nir1]
-        else:
-            bandFilters = [pan]
-    elif sensor == "S2A_10m" or sensor == "S2A_60m":
+    elif sensor_is(sensor, "L8"):
+        bandFilters = [coastal, blue, green, red, nir1]
+    elif sensor_is(sensor, "L7"):
+        bandFilters = [blue, green, red, nir1]
+    elif sensor_is(sensor, 'S2'):
         bandFilters = [coastal, blue, green, red, rededge, rededge2, rededge3, nir1, nir2]#, nir3, swir1, swir2, swir3]
 
     return startWV, endWV, bandFilters
 
-# Split the image into square tiles of tileSize pixels and returns the extents
-# ([minX, maxY, maxX, minY]) of each tile in the projected units.
+
 def getTileExtents(inImg, tileSize):
+    # Split the image into square tiles of tileSize pixels and returns the extents
+    # ([minX, maxY, maxX, minY]) of each tile in the projected units.
     tileExtents = []
     gt = inImg.GetGeoTransform()
 
@@ -482,7 +474,7 @@ def getTileExtents(inImg, tileSize):
 
     return tileExtents
 
-# Return list of corner coordinates from a geotransform
+
 def getExtent(gt,endCol, endRow, startCol = 0, startRow = 0):
     ''' Return list of corner coordinates from a geotransform
 
@@ -512,7 +504,7 @@ def getExtent(gt,endCol, endRow, startCol = 0, startRow = 0):
         yarr.reverse()
     return ext
 
-# Reproject a list of x,y coordinates.
+
 def reprojectCoords(coords,src_srs,tgt_srs):
     ''' Reproject a list of x,y coordinates.
 

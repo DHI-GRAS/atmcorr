@@ -8,8 +8,7 @@ from osgeo import gdal
 import numpy as np
 from tqdm import trange
 from gdal_utils.gdal_utils import array_to_gtiff
-
-from .sensors import sensor_is
+from atmospheric_correction.sensors import sensor_is
 
 logger = logging.getLogger(__name__)
 
@@ -182,7 +181,7 @@ def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
     # perform dark object substraction
     if doDOS:
         rawImg = array_to_gtiff(rawData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
-        dosDN  = darkObjectSubstraction(rawImg)
+        dosDN = darkObjectSubstraction(rawImg)
         rawImg = None
     else:
         dosDN = list(np.zeros(rawData.shape[2]))
@@ -190,40 +189,63 @@ def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
     # apply the radiometric correction factors to input image
     logger.info("Radiometric correctionL8")
     radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, rawData.shape[2]))
-    validMask       = np.zeros((inImg.RasterYSize, inImg.RasterXSize))
+    validMask = np.zeros((inImg.RasterYSize, inImg.RasterXSize))
     for band in range(rawData.shape[2]):
         logger.info(band + 1)
-        radiometricData[:, :, band] = np.where((rawData[:, :, band] - dosDN[band]) > 0,
-                                               (rawData[:, :, band] - dosDN[band]) * multFactor[band] + addFactor[band],
-                                               0)
+        mask = (rawData[:, :, band] - dosDN[band]) > 0
+        radiometricData[~mask, band] = 0
+        radiometricData[mask, band] = (
+                (rawData[mask, band] - dosDN[band]) *
+                multFactor[band] + addFactor[band])
         validMask += radiometricData[:, :, band]
 
     # Mark the pixels which have all radiances of 0 as invalid
-    invalidMask = np.where(validMask > 0, False, True)
+    invalidMask = validMask <= 0
     radiometricData[invalidMask, :] = np.nan
 
-    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            radiometricData, "MEM",
+            inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
 
 
-def toaRadianceS2(inImg, metadataFile):
+def toaRadianceS2(inImg, metadata):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
+
+    Parameters
+    ----------
+    inImg : gdal image
+        input data
+    metadata : dict
+        meta data
+
+    Metadata contents
+    -----------------
+    metadata['band_ids'] : sequence, optional
+        band IDs (0-based)
+        default: 0-9
 
     Note
     ----
     Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    rc = float(metadataFile['reflection_conversion'])
-    u = float(metadataFile['quantification_value'])
-    e0 = [float(e) for e in metadataFile['irradiance_values']]
-    z = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
+    rc = float(metadata['reflection_conversion'])
+    u = float(metadata['quantification_value'])
+    irradiance = [float(e) for e in metadata['irradiance_values']]
+    sun_zenith = float(metadata[metadata['current_granule']]['sun_zenit'])
+    band_ids = metadata.get('band_ids', None)
+    if band_ids is None:
+        band_ids = list(range(9))
 
     # Convert to radiance
     logger.info("Radiometric correction")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, 9))
-    for i in range(9):
-        rToa = (inImg.GetRasterBand(i + 1).ReadAsArray().astype(float)) / rc
-        radiometricData[:, :, i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
+    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(band_ids)))
+    for i, band_id in enumerate(band_ids):
+        rToa = inImg.GetRasterBand(i + 1).ReadAsArray().astype(float)
+        rToa /= rc
+        factor = irradiance[band_id] * cos(radians(sun_zenith)) / (pi * u)
+        radiometricData[:, :, i] = rToa * factor
+
     return array_to_gtiff(
             radiometricData, "MEM",
             inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
