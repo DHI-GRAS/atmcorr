@@ -5,12 +5,12 @@ import multiprocessing
 
 from gdal_utils.gdal_utils import cutline_to_shape_name
 
-from bathyUtilities import getTileExtents
 from atmCorr6S import getCorrectionParams6S
 from atmCorr6S import performAtmCorrection
 from read_satellite_metadata import readMetadataS2L1C
 import atmParametersMODIS as modis
 
+from .io_utils import getTileExtents
 from .sensors import sensor_is
 from .toa.radiance import toaRadiance
 from .toa.reflectance import toaReflectance

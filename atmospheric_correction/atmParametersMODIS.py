@@ -10,7 +10,7 @@ from xml.etree import ElementTree as ET
 import numpy as np
 from osgeo import gdal, osr
 
-import bathyUtilities as u
+from . import io_utils as io_utils
 from gdal_utils import gdal_binaries as gbin
 
 # Constants
@@ -74,19 +74,21 @@ def meanValueOfExtent(inFilename, extent, scaleFactor, fillValue, roiShape=None)
     # If ROI shapefile is given then ignore the extent and clip the image with
     # the ROI instead
     if roiShape:
-        clippedImg = u.clipRasterWithShape(inImg, roiShape)
+        clippedImg = io_utils.clipRasterWithShape(inImg, roiShape)
         for band in range(bandNum):
             subsetData = clippedImg.GetRasterBand(band+1).ReadAsArray()
-            outData[band] = np.nanmean(subsetData[subsetData!=fillValue]*scaleFactor)
+            outData[band] = np.nanmean(subsetData[subsetData != fillValue]*scaleFactor)
         clippedImg = None
     else:
         # convert extent from geographic to pixel values
         [minX, maxY, maxX, minY] = extent
-        pixExtent = u.world2Pixel(rasterGeoTrans, minX, maxY) +  u.world2Pixel(rasterGeoTrans, maxX, minY)
+        pixExtent = (
+                io_utils.world2Pixel(rasterGeoTrans, minX, maxY) +
+                io_utils.world2Pixel(rasterGeoTrans, maxX, minY))
         for band in range(bandNum):
             inData = inImg.GetRasterBand(band+1).ReadAsArray()
             subsetData = inData[pixExtent[1]:pixExtent[3]+1, pixExtent[0]:pixExtent[2]+1]
-            outData[band] = np.nanmean(subsetData[subsetData!=fillValue]*scaleFactor)
+            outData[band] = np.nanmean(subsetData[subsetData != fillValue]*scaleFactor)
 
     inImg = None
     return outData
@@ -182,7 +184,7 @@ def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = 
         gt=inImg.GetGeoTransform()
         cols = inImg.RasterXSize
         rows = inImg.RasterYSize
-        ext = u.getExtent(gt,cols,rows)
+        ext = io_utils.getExtent(gt,cols,rows)
         # Extent is projected coordinates of UL and BR pixels
         extent = [ext[0][0], ext[0][1], ext[2][0], ext[2][1]]
     inImg = None
@@ -212,7 +214,6 @@ def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = 
     return aot, wv, ozone
 
 def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
-    #####################################################
     # Get overpass time from metadata
     if sensor == "WV2" or sensor == "WV3":
         firstLineTimeRegex = "\s*firstLineTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"
@@ -277,16 +278,16 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
 
     # First get extent in projected coordinates
     inImg = gdal.Open(imagePath, gdal.GA_ReadOnly)
-    gt=inImg.GetGeoTransform()
+    gt = inImg.GetGeoTransform()
     cols = inImg.RasterXSize
     rows = inImg.RasterYSize
-    ext = u.getExtent(gt,cols,rows)
+    ext = io_utils.getExtent(gt,cols,rows)
 
     # Then reproject to geographic
-    src_srs=osr.SpatialReference()
+    src_srs = osr.SpatialReference()
     src_srs.ImportFromWkt(inImg.GetProjection())
     tgt_srs = src_srs.CloneGeogCS()
-    geo_ext= u.reprojectCoords(ext,src_srs,tgt_srs)
+    geo_ext = io_utils.reprojectCoords(ext,src_srs,tgt_srs)
     # get LL and UR pixels
     extent = [geo_ext[1], geo_ext[3]]
 
