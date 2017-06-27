@@ -8,8 +8,9 @@ from gdal_utils.gdal_utils import cutline_to_shape_name
 from atmCorr6S import getCorrectionParams6S
 from atmCorr6S import performAtmCorrection
 from read_satellite_metadata import readMetadataS2L1C
-import atmParametersMODIS as modis
 
+
+from . import modis_params
 from .io_utils import getTileExtents
 from .sensors import sensor_is
 from .toa.radiance import toaRadiance
@@ -87,7 +88,7 @@ def atmProcessingMain(options):
         modisAtmDir = None
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
             logger.info('Retrieving MODIS atmospheric parameters ...')
-            modisAtmDir = modis.downloadAtmParametersMODIS(dnFile, metadata, sensor)
+            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, metadata, sensor)
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
@@ -104,7 +105,7 @@ def atmProcessingMain(options):
                 # different atmospheric parameters for each tile
                 if modisAtmDir:
                     atm = options["atm"].copy()
-                    aot, pwv, ozone = modis.estimateAtmParametersMODIS(
+                    aot, pwv, ozone = modis_params.estimateAtmParametersMODIS(
                             dnFile, modisAtmDir, extent=extent, yearDoy="",
                             time=-1, roiShape=None)
 
@@ -138,7 +139,7 @@ def atmProcessingMain(options):
 
         if modisAtmDir:
             logger.info('MODIS cleanup')
-            modis.deleteDownloadedModisFiles(modisAtmDir)
+            modis_params.deleteDownloadedModisFiles(modisAtmDir)
         radianceImg = None
 
     elif atmCorrMethod in ["DOS", "TOA"]:
