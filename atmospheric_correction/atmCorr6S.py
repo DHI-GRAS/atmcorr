@@ -9,11 +9,8 @@ from scipy.ndimage import filters
 from scipy import interpolate
 from tqdm import trange
 from tqdm import tqdm
-
-from gdal_utils.gdal_utils import array_to_gtiff
-
-import bathyUtilities
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength
+from gdal_utils.gdal_utils import array_to_gtiff
 
 from . import band_filters
 
@@ -97,7 +94,7 @@ def getCorrectionParams6S(metadataFile, atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
 
     # Also need to resample the band filters from 1nm to 2.5nm as this is the highest spectral resolution supported by 6S
     for i, band in enumerate(bandFilters):
-        bandFilters[i] = bathyUtilities.resampleBandFilters(band, startWV, endWV, 0.0025)
+        bandFilters[i] = band_filters.resampleBandFilters(band, startWV, endWV, 0.0025)
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
