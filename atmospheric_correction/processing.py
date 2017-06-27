@@ -4,13 +4,11 @@ import logging
 import multiprocessing
 
 from gdal_utils.gdal_utils import cutline_to_shape_name
-
-from atmCorr6S import getCorrectionParams6S
-from atmCorr6S import performAtmCorrection
 from read_satellite_metadata import readMetadataS2L1C
 
-
 from . import modis_params
+from .wrap_6S import getCorrectionParams6S
+from .wrap_6S import performAtmCorrection
 from .io_utils import getTileExtents
 from .sensors import sensor_is
 from .toa.radiance import toaRadiance
