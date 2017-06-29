@@ -1,3 +1,4 @@
+import os
 import csv
 
 import numpy as np
@@ -5,8 +6,21 @@ from scipy.interpolate import interp1d
 
 from .sensors import sensor_is
 
+_here = os.path.abspath(os.path.dirname(__file__))
+_csvdir = os.path.join(_here, 'data')
 
-def readBandFiltersFromCSV(csvFilename, sensor, isPan):
+
+def read_band_filters(sensor, isPan):
+    if sensor_is(sensor, 'S2'):
+        fname = 'S2.txt'
+    else:
+        sensor + '.txt'
+    csvfile = os.path.join(_csvdir, fname)
+
+    return _read_csv(csvfile, sensor, isPan)
+
+
+def _read_csv(csvFilename, sensor, isPan):
     """Read band filters from CSV file and assign them to a given sensor"""
     # create empty lists for all the possible bands
     pan = []; coastal = []; blue = []; green = []; yellow = []; red = []; rededge = []; nir1 = []; nir2 = []; wavelength = []
