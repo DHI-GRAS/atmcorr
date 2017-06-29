@@ -1,16 +1,14 @@
 import copy
 import logging
-import multiprocessing
 
 import gdal_utils.gdal_utils as gu
 
 from . import modis_params
 from . import wrap_6S
+from . import sat_meta
 from .sensors import sensor_is
-from .sensors import tile_from_fname
-from .sat_meta import readMetadataS2L1C
 from .io_utils import getTileExtents
-from .toa.radiance import toaRadiance
+from .toa.radiance import toa_radiance
 from .toa.reflectance import toaReflectance
 
 logger = logging.getLogger(__name__)
@@ -21,11 +19,11 @@ def main_optdict(options):
 
 
 def main(
-        sensor, dnFile, metadataFile, atmCorrMethod,
+        sensor, dnFile, mtdfile, atmCorrMethod,
         atm, aeroProfile, tileSizePixels,
         isPan=False, adjCorr=True,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
-        metadataFile_tile=None, tile=None, band_ids=None):
+        mtdfile_tile=None, tile=None, band_ids=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -35,8 +33,8 @@ def main(
         L7, L8, S2
     dnFile : str
         path to digital numbers input file
-    metadataFile : str
-        path to metadata file
+    mtdfile : str
+        path to mtdfile file
     atmCorrMethod : str
         6S, RAD, DOS, TOA (same as DOS)
     atm : dict
@@ -57,8 +55,8 @@ def main(
     nprocs : int
         number of processors to use
         default: all available
-    metadataFile_tile : str
-        path to tile metadata
+    mtdfile_tile : str
+        path to tile mtdfile
         required for S2
     tile : str
         tile name for S2
@@ -71,30 +69,28 @@ def main(
     # keep unchanged copy
     atm_original = copy.deepcopy(atm)
 
-    metadata = metadataFile
+    mtdfile = mtdfile
     if sensor_is(sensor, 'S2'):
-        if tile is None:
-            tile = tile_from_fname(dnFile)
-        metadata = readMetadataS2L1C(
-                mtdfile=metadataFile,
-                mtdfile_tile=metadataFile_tile,
-                band_ids=band_ids,
-                tile=tile)
-        logger.debug('S2 metadata:\n%s', metadata)
-        # Add current granule (used to extract relevant metadata later...)
-        metadata.update({'current_granule': tile})
+        mtdfile = sat_meta.readMetadataS2L1C(
+                mtdfile=mtdfile,
+                mtdfile_tile=mtdfile_tile)
+        logger.debug('S2 mtdfile:\n%s', mtdfile)
+        # Add current granule (used to extract relevant mtdfile later...)
+        mtdfile.update({
+            'current_granule': tile,
+            'band_ids': band_ids})
 
     # DN -> Radiance -> Reflectance
     if atmCorrMethod == "6S":
         doDOS = False
 
         logger.info('Clipping image to ROI ...')
-        inImg = gu.cutline_to_shape_name(dnFile, roiFile)
+        img = gu.cutline_to_shape_name(dnFile, roiFile)
 
         logger.info('Computing TOA radiance ...')
-        radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS, isPan=isPan)
+        radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS, isPan=isPan)
 
-        inImg = None
+        img = None
         reflectanceImg = None
 
         tileExtents = [[None]]
@@ -106,7 +102,7 @@ def main(
         modisAtmDir = None
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
             logger.info('Retrieving MODIS atmospheric parameters ...')
-            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, metadata, sensor)
+            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtdfile, sensor)
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
@@ -143,11 +139,8 @@ def main(
                 logger.debug("Water Vapour: " + str(atm['PWV']))
                 logger.debug("Ozone: " + str(atm['ozone']))
 
-                if nprocs is None:
-                    nprocs = multiprocessing.cpu_count()
-
                 s, tileCorrectionParams = wrap_6S.getCorrectionParams6S(
-                        metadata, atm=atm, sensor=sensor, isPan=isPan,
+                        sensor=sensor, mtdfile=mtdfile, atm=atm, isPan=isPan,
                         aeroProfile=aeroProfile, extent=extent, nprocs=nprocs)
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
@@ -172,21 +165,21 @@ def main(
             doDOS = True
         else:
             doDOS = False
-        inImg = gu.cutline_to_shape_name(dnFile, roiFile)
+        img = gu.cutline_to_shape_name(dnFile, roiFile)
         if not sensor_is(sensor, 'S2'):
-            radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS)
-            inImg = None
-            reflectanceImg = toaReflectance(radianceImg, metadata, sensor)
+            radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS)
+            img = None
+            reflectanceImg = toaReflectance(radianceImg, mtdfile, sensor)
             radianceImg = None
         # S2 data is provided in L1C meaning in TOA reflectance
         else:
-            reflectanceImg = toaReflectance(inImg, metadata, sensor)
-            inImg = None
+            reflectanceImg = toaReflectance(img, mtdfile, sensor)
+            img = None
 
     elif atmCorrMethod == "RAD":
         doDOS = False
-        inImg = gu.cutline_to_shape_name(dnFile, roiFile)
-        radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS)
+        img = gu.cutline_to_shape_name(dnFile, roiFile)
+        radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS)
         reflectanceImg = radianceImg
 
     return reflectanceImg

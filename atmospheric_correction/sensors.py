@@ -1,6 +1,3 @@
-import os
-import re
-
 
 def sensor_is(sensor, key):
     if sensor == key:
@@ -19,15 +16,3 @@ def sensor_is(sensor, key):
         else:
             return key == 'S2'
     raise ValueError('Unknown sensor \'{}\'.'.format(sensor))
-
-
-def tile_from_fname(fname):
-    """Get S2 tile from file name"""
-    fname = os.path.basename(fname)
-    tile = fname[len(fname) - 10:-4]
-    if re.search('\d{2}[A-Z]{3}', tile) is not None:
-        return tile
-    else:
-        raise ValueError(
-                'Unable to get tile from fname \'{}\'.'
-                ''.format(fname))

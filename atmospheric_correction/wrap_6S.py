@@ -19,14 +19,15 @@ PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 
 
 def setup_SixS(
+        sensor,
         AOT, PWV, ozone, bandFilter,
-        aeroProfile, metadataFile, startWV, endWV):
+        aeroProfile, mtdfile, startWV, endWV):
 
-    s = SixS(PATH_6S)
+    mysixs = SixS(PATH_6S)
 
-    # Set 6S BRDF model to 1 m/s wind ocean with typical salinity and pigment concentration
-    # s.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
-    s.atmos_profile = AtmosProfile.UserWaterAndOzone(PWV, ozone)
+    # Set 6S BRDF model to 1 m/mysixs wind ocean with typical salinity and pigment concentration
+    # mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
+    mysixs.atmos_profile = AtmosProfile.UserWaterAndOzone(PWV, ozone)
 
     aeroProfileDict = {
             "No Aerosols": AeroProfile.NoAerosols,
@@ -37,43 +38,43 @@ def setup_SixS(
             "BiomassBurning": AeroProfile.BiomassBurning,
             "Stratospheric": AeroProfile.Stratospheric}
 
-    s.aero_profile = AeroProfile.PredefinedType(aeroProfileDict[aeroProfile])
+    mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfileDict[aeroProfile])
     # get from MOD04 or MODATML2
-    s.aot550 = AOT
+    mysixs.aot550 = AOT
 
     # Set 6S altitude
-    s.altitudes.set_target_sea_level()
-    s.altitudes.set_sensor_satellite_level()
+    mysixs.altitudes.set_target_sea_level()
+    mysixs.altitudes.set_sensor_satellite_level()
 
     # Set 6S atmospheric correction
-    s.atmos_corr = AtmosCorr.AtmosCorrLambertianFromReflectance(10)
+    mysixs.atmos_corr = AtmosCorr.AtmosCorrLambertianFromReflectance(10)
 
     # Set 6S geometry
-    viewing_geometry.readGeometryWV2(metadataFile, s)
+    viewing_geometry.set_geometry(sensor, mtdfile, mysixs)
 
-    s.wavelength = Wavelength(startWV, endWV, bandFilter)
-    return s
+    mysixs.wavelength = Wavelength(startWV, endWV, bandFilter)
+    return mysixs
 
 
-def fun_SixS(args):
-    s = setup_SixS(args)
-    s.run()
+def fun_SixS(setup_args):
+    mysixs = setup_SixS(setup_args)
+    mysixs.run()
     xdict = {
-            'xa': s.outputs.coef_xa,  # inverse of transmitance
-            'xb': s.outputs.coef_xb,  # scattering term of the atmosphere
-            'xc': s.outputs.coef_xc}  # reflectance of atmosphere for isotropic light (albedo)
-    outargs = [
-            s.geometry.view_z,
-            s.outputs.optical_depth_total.total,
-            s.outputs.transmittance_global_gas.upward,
-            s.outputs.transmittance_total_scattering.upward]
-    return (xdict, outargs)
+            'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
+            'xb': mysixs.outputs.coef_xb,  # scattering term of the atmosphere
+            'xc': mysixs.outputs.coef_xc}  # reflectance of atmosphere for isotropic light (albedo)
+    retvals = [
+            mysixs.geometry.view_z,
+            mysixs.outputs.optical_depth_total.total,
+            mysixs.outputs.transmittance_global_gas.upward,
+            mysixs.outputs.transmittance_total_scattering.upward]
+    return (xdict, retvals)
 
 
 def getCorrectionParams6S(
-        metadataFile,
+        sensor,
+        mtdfile,
         atm=None,
-        sensor="WV2",
         isPan=False,
         aeroProfile="Continental",
         extent=None,
@@ -99,12 +100,13 @@ def getCorrectionParams6S(
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
     jobs = [(
+        sensor,
         atm['AOT'],
         atm['PWV'],
         atm['ozone'],
         bandFilter,
         aeroProfile,
-        metadataFile,
+        mtdfile,
         startWV,
         endWV)
         for bandFilter in bandFilters]
@@ -112,30 +114,30 @@ def getCorrectionParams6S(
             'Running %d atmospheric correction jobs on %d processors',
             len(jobs), nprocs)
     output = []
-    s = None
+    mysixs = None
     for res in tqdm(
             pool.imap(fun_SixS, jobs),
             desc='Atmospheric Correction 6S',
             unit='job'):
         output.append(res[0])
-        s = res[1]
+        mysixs = res[1]
     pool.close()
     pool.join()
-    return s, output
+    return mysixs, output
 
 
-def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
-    shape = (inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount)
+def performAtmCorrection(img, correctionParams6S, radius=1, mysixs=None):
+    shape = (img.RasterYSize, img.RasterXSize, img.RasterCount)
     refl = np.zeros(shape, dtype='float32')
     # assume same horizontal and vertical resolution
-    pixelSize = inImg.GetGeoTransform()[1]
+    pixelSize = img.GetGeoTransform()[1]
 
     nbands = len(correctionParams6S)
 
     for b in trange(nbands, desc='atmcorr', unit='band'):
         correctionParam = correctionParams6S[b]
         # Read uncorrected radiometric data and correct
-        radiance = inImg.GetRasterBand(b + 1).ReadAsArray()
+        radiance = img.GetRasterBand(b + 1).ReadAsArray()
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
@@ -152,60 +154,62 @@ def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
         refl[:, :, b] = refl_band
 
     # Perform adjecency correction if required
-    if s is not None:
+    if mysixs is not None:
         logger.info(
                 'Performing adjacency correction')
         for b in trange(nbands, desc='adjcorr', unit='band'):
             refl[:, :, b] = adjacencyCorrection(
                     refl[:, :, b],
                     pixelSize,
-                    s,
+                    mysixs,
                     radius)
 
     return gu.array_to_gtiff(
             refl, "MEM",
-            inImg.GetProjection(), inImg.GetGeoTransform(),
+            img.GetProjection(), img.GetGeoTransform(),
             banddim=2)
 
 
-def explodeCorrectionParam(param, newShape):
+def explodeCorrectionParam(param, newshape):
     # Interpolate the an array with parameters into the new shape
-    array = np.array(param)
+    data = np.data(param)
+    ny, nx = data.shape
 
-    # If there is only one value then assign it to each cell in the new array
-    if array.size == 1:
-        return np.zeros(newShape)+array[0]
+    # If there is only one value then assign it to each cell in the new data
+    if data.size == 1:
+        return np.zeros(newshape) + data[0]
+
     # Otherwise interpolate
-    else:
-        # At least two points in each dimension are needed for linerar interpolation
-        if array.shape[0] == 1:
-            array = np.vstack((array, array))
-        if array.shape[1] == 1:
-            array = np.hstack((array, array))
+    # At least two points in each dimension are needed for linerar interpolation
+    if ny == 1:
+        data = np.vstack((data, data))
+    if nx == 1:
+        data = np.hstack((data, data))
 
-        # Assume that the parameters are regularly spaced within the new array
-        xStep = newShape[1]/(array.shape[1])
-        xLoc = np.array([(x+0.5)*xStep for x in range(array.shape[1])])
-        yStep = newShape[0]/(array.shape[0])
-        yLoc = np.array([(y+0.5)*yStep for y in range(array.shape[0])])
+    # Assume that the parameters are regularly spaced within the new data
+    dx = newshape[1] / nx
+    xx = (np.arange(nx) + 0.5) * dx
 
-        f = interpolate.interp2d(xLoc, yLoc, array, fill_value=None)
-        explodedParam = f(range(newShape[1]), range(newShape[0]))
-        return explodedParam
+    dy = newshape[0] / ny
+    yy = (np.arange(ny) + 0.5) * dy
+
+    f = interpolate.interp2d(xx, yy, data, fill_value=None)
+    explodedParam = f(range(newshape[1]), range(newshape[0]))
+    return explodedParam
 
 
-def adjacencyCorrection(refl, pixelSize, s, radius=1.0):
+def adjacencyCorrection(refl, pixelSize, mysixs, radius=1.0):
     # NEEDS TO BE DOUBLE CHECKED
     # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
 
     # definition below eq (4)
-    u_v, tau, T_dir, T_dif = np.cos(np.radians(s[0])), s[1], s[2], s[3]
+    u_v, tau, T_dir, T_dif = np.cos(np.radians(mysixs[0])), mysixs[1], mysixs[2], mysixs[3]
     T = 1 - ((1 - T_dif) + (1 - T_dir))
     """
-    u_v = np.cos(np.radians(s.geometry.view_z))
-    tau = s.outputs.optical_depth_total.total
-    T_dir = s.outputs.transmittance_global_gas.upward
-    T_dif = s.outputs.transmittance_total_scattering.upward
+    u_v = np.cos(np.radians(mysixs.geometry.view_z))
+    tau = mysixs.outputs.optical_depth_total.total
+    T_dir = mysixs.outputs.transmittance_global_gas.upward
+    T_dif = mysixs.outputs.transmittance_total_scattering.upward
     T= 1 - ((1-T_dif) + (1-T_dir))
     """
 
@@ -225,8 +229,8 @@ def adjacencyCorrection(refl, pixelSize, s, radius=1.0):
     refl = (refl*T - adjRefl*t_d) / np.exp(-tau/u_v)
 
     # http://www.cesbio.ups-tlse.fr/multitemp/?p=2277
-    # albedo = s.outputs.spherical_albedo.total
-    # refl = ( refl*T*(1-refl*s)/(1-adjRefl*s) - adjRefl*t_d ) / exp(-tau/u_v)
+    # albedo = mysixs.outputs.spherical_albedo.total
+    # refl = ( refl*T*(1-refl*mysixs)/(1-adjRefl*mysixs) - adjRefl*t_d ) / exp(-tau/u_v)
     # T = 1 - ((1-T_dif) + (1-T_dir))
     # refl = (refl*T*(1-refl*albedo)/(1-adjRefl*albedo) - adjRefl*T_dif) / T_dir
 
