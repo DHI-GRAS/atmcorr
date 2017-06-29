@@ -74,14 +74,11 @@ def fun_SixS(setup_args):
 def getCorrectionParams6S(
         sensor,
         mtdfile,
-        atm=None,
+        atm,
         isPan=False,
         aeroProfile="Continental",
         extent=None,
         nprocs=None):
-
-    if atm is None:
-        atm = {'AOT': -1, 'PWV': -1, 'ozone': -1}
 
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()

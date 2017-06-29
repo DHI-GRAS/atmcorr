@@ -16,5 +16,7 @@ import yamlconfig.click_option
         help='Atmospheric correction config file')
 def cli(**config):
     """Run atmospheric correction"""
+    from atmospheric_correction.logs import set_cli_logger
     from atmospheric_correction.processing import main
+    set_cli_logger(level='INFO')
     main(**config)
