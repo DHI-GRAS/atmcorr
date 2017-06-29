@@ -7,7 +7,7 @@ import yamlconfig.click_option
 @yamlconfig.click_option.yaml_config_option(
         keys=[
             'sensor', 'dnFile', 'mtdfile',
-            'atmCorrMethod', 'atm', 'isPan', 'adjCorr',
+            'method', 'atm', 'isPan', 'adjCorr',
             'aeroProfile', 'tileSizePixels',
             'isPan', 'adjCorr',
             'tile', 'mtdfile_tile', 'roiFile',

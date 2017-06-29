@@ -23,7 +23,7 @@ def toa_radiance(img, mtdfile, sensor, doDOS, isPan=False):
     elif sensor_is(sensor, 'L7L8'):
         return toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'S2'):
-        return toa_radiance_S2(img, mtdfile)
+        return toa_radiance_S2(img, mtd_dict=mtdfile)
 
 
 def get_effectivebw_abscalfactor_WV(mtdfile):
@@ -236,19 +236,19 @@ def toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor):
             img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toa_radiance_S2(img, metadata):
+def toa_radiance_S2(img, mtd_dict):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters
     ----------
     img : gdal image
         input data
-    metadata : dict
+    mtd_dict : dict
         meta data
 
     Metadata contents
     -----------------
-    metadata['band_ids'] : sequence, optional
+    mtd_dict['band_ids'] : sequence, optional
         band IDs (0-based)
         default: 0-9
 
@@ -257,11 +257,11 @@ def toa_radiance_S2(img, metadata):
     Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    rc = float(metadata['reflection_conversion'])
-    u = float(metadata['quantification_value'])
-    irradiance = [float(e) for e in metadata['irradiance_values']]
-    sun_zenith = float(metadata[metadata['current_granule']]['sun_zenit'])
-    band_ids = metadata.get('band_ids', None)
+    rc = float(mtd_dict['reflection_conversion'])
+    u = float(mtd_dict['quantification_value'])
+    irradiance = [float(e) for e in mtd_dict['irradiance_values']]
+    sun_zenith = float(mtd_dict[mtd_dict['current_granule']]['sun_zenit'])
+    band_ids = mtd_dict.get('band_ids', None)
     if band_ids is None:
         logger.info('Assuming 9 bands')
         band_ids = list(range(9))
