@@ -83,15 +83,8 @@ def getCorrectionParams6S(
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 
-    if getattr(sys, 'frozen', False):
-        application_path = os.path.dirname(sys.executable)
-    elif __file__:
-        application_path = os.path.dirname(__file__)
-
-    path = os.path.join(application_path, 'dependency', 'sensorResponseCurves', sensor + ".txt")
-
     # Set 6S band filters
-    startWV, endWV, bandFilters = band_filters.readBandFiltersFromCSV(path, sensor, isPan)
+    startWV, endWV, bandFilters = band_filters.read_band_filters(sensor, isPan)
     startWV /= 1000.0
     endWV /= 1000.0
 
