@@ -65,16 +65,16 @@ def reprojectModisSwath(inFilename, outFilename, projectionString):
 def meanValueOfExtent(inFilename, extent, scaleFactor, fillValue, roiShape=None):
     # extent is of the form [minX, maxY, maxX, minY] in projected values
     # open image and read metadata
-    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
-    bandNum = inImg.RasterCount
-    rasterGeoTrans = inImg.GetGeoTransform()
-    outData = np.zeros((inImg.RasterCount))
+    img = gdal.Open(inFilename, gdal.GA_ReadOnly)
+    bandNum = img.RasterCount
+    rasterGeoTrans = img.GetGeoTransform()
+    outData = np.zeros((img.RasterCount))
 
     # For each band calculate the mean of valid pixels in the extent.
     # If ROI shapefile is given then ignore the extent and clip the image with
     # the ROI instead
     if roiShape:
-        clippedImg = io_utils.clipRasterWithShape(inImg, roiShape)
+        clippedImg = io_utils.clipRasterWithShape(img, roiShape)
         for band in range(bandNum):
             subsetData = clippedImg.GetRasterBand(band+1).ReadAsArray()
             outData[band] = np.nanmean(subsetData[subsetData != fillValue]*scaleFactor)
@@ -86,25 +86,25 @@ def meanValueOfExtent(inFilename, extent, scaleFactor, fillValue, roiShape=None)
                 io_utils.world2Pixel(rasterGeoTrans, minX, maxY) +
                 io_utils.world2Pixel(rasterGeoTrans, maxX, minY))
         for band in range(bandNum):
-            inData = inImg.GetRasterBand(band+1).ReadAsArray()
+            inData = img.GetRasterBand(band+1).ReadAsArray()
             subsetData = inData[pixExtent[1]:pixExtent[3]+1, pixExtent[0]:pixExtent[2]+1]
             outData[band] = np.nanmean(subsetData[subsetData != fillValue]*scaleFactor)
 
-    inImg = None
+    img = None
     return outData
 
 def percentileValueOfImage(inFilename, scaleFactor, fillValue, percentile = 90):
     # open image and read metadata
-    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
-    bandNum = inImg.RasterCount
+    img = gdal.Open(inFilename, gdal.GA_ReadOnly)
+    bandNum = img.RasterCount
 
     # for each band calculate the max of valid pixels in the image
-    outData = np.zeros((inImg.RasterCount))
+    outData = np.zeros((img.RasterCount))
     for band in range(bandNum):
-        inData = inImg.GetRasterBand(band+1).ReadAsArray()
+        inData = img.GetRasterBand(band+1).ReadAsArray()
         outData[band] = np.percentile(inData[inData!=fillValue]*scaleFactor, percentile)
 
-    inImg = None
+    img = None
     return outData
 
 # Find a MODIS file in a list of files with an overpass closest to the given
@@ -176,18 +176,18 @@ def estimateAtmParametersMODIS(fileImg,  modisAtmDir, extent = None,  yearDoy = 
     fillValueMOD07 = -9999
 
     # Get the projection and extent (if needed) of the input image
-    inImg = gdal.Open(fileImg, gdal.GA_ReadOnly)
-    proj = inImg.GetProjection()
+    img = gdal.Open(fileImg, gdal.GA_ReadOnly)
+    proj = img.GetProjection()
     # If neither extent or roiShape are given the use the extent of the
     # whole input image
     if extent is None and roiShape is None:
-        gt=inImg.GetGeoTransform()
-        cols = inImg.RasterXSize
-        rows = inImg.RasterYSize
+        gt=img.GetGeoTransform()
+        cols = img.RasterXSize
+        rows = img.RasterYSize
         ext = io_utils.getExtent(gt,cols,rows)
         # Extent is projected coordinates of UL and BR pixels
         extent = [ext[0][0], ext[0][1], ext[2][0], ext[2][1]]
-    inImg = None
+    img = None
 
     # get AOT
     fileStr = 'HDF4_EOS:EOS_SWATH:"'+fileMOD04+'":mod04:'+fieldMOD04
@@ -277,15 +277,15 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
     # Get ROI as the image extent in geographic coordinates
 
     # First get extent in projected coordinates
-    inImg = gdal.Open(imagePath, gdal.GA_ReadOnly)
-    gt = inImg.GetGeoTransform()
-    cols = inImg.RasterXSize
-    rows = inImg.RasterYSize
+    img = gdal.Open(imagePath, gdal.GA_ReadOnly)
+    gt = img.GetGeoTransform()
+    cols = img.RasterXSize
+    rows = img.RasterYSize
     ext = io_utils.getExtent(gt,cols,rows)
 
     # Then reproject to geographic
     src_srs = osr.SpatialReference()
-    src_srs.ImportFromWkt(inImg.GetProjection())
+    src_srs.ImportFromWkt(img.GetProjection())
     tgt_srs = src_srs.CloneGeogCS()
     geo_ext = io_utils.reprojectCoords(ext,src_srs,tgt_srs)
     # get LL and UR pixels
@@ -305,7 +305,6 @@ def downloadAtmParametersMODIS(imagePath, metadataPath, sensor):
         proc = subprocess.Popen(cmd, shell=True, cwd=workingDir, stdout=subprocess.PIPE, stdin=subprocess.PIPE, stderr=subprocess.PIPE)
         proc.communicate(input="y")
 
-    inImg = None
     return downloadDir
 
 

@@ -112,16 +112,16 @@ def clipRasterWithShape(rasterImg, shapeImg):
 
 
 def openAndClipRaster(inFilename, shapeRoiFilename):
-    inImg = gdal.Open(inFilename, gdal.GA_ReadOnly)
+    img = gdal.Open(inFilename, gdal.GA_ReadOnly)
 
     # If the ROI file is not specified or does not exist then return
     # unclipped image
     if not shapeRoiFilename or not os.path.exists(shapeRoiFilename):
-        return inImg
+        return img
 
     shapeRoi = ogr.Open(shapeRoiFilename)
-    clippedImg = clipRasterWithShape(inImg, shapeRoi)
-    inImg = None
+    clippedImg = clipRasterWithShape(img, shapeRoi)
+    img = None
     shapeRoi = None
     return clippedImg
 
@@ -179,16 +179,16 @@ def saveImgByCopy(outImg, outPath):
     print('Saved ' + outPath)
 
 
-def getTileExtents(inImg, tileSize):
+def getTileExtents(img, tileSize):
     # Split the image into square tiles of tileSize pixels and returns the extents
     # ([minX, maxY, maxX, minY]) of each tile in the projected units.
     tileExtents = []
-    gt = inImg.GetGeoTransform()
+    gt = img.GetGeoTransform()
 
-    rows = [int(i*tileSize) for i in range(int(inImg.RasterYSize/tileSize)+1)]
-    rows.append(inImg.RasterYSize)
-    cols = [int(i*tileSize) for i in range(int(inImg.RasterXSize/tileSize)+1)]
-    cols.append(inImg.RasterXSize)
+    rows = [int(i*tileSize) for i in range(int(img.RasterYSize/tileSize)+1)]
+    rows.append(img.RasterYSize)
+    cols = [int(i*tileSize) for i in range(int(img.RasterXSize/tileSize)+1)]
+    cols.append(img.RasterXSize)
 
     for y in range(1, len(rows)):
         tileExtents.append([])

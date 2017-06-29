@@ -4,7 +4,7 @@ import csv
 import numpy as np
 from scipy.interpolate import interp1d
 
-from .sensors import sensor_is
+from atmospheric_correction.sensors import sensor_is
 
 _here = os.path.abspath(os.path.dirname(__file__))
 _csvdir = os.path.join(_here, 'data')

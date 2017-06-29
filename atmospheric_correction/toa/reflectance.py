@@ -6,19 +6,19 @@ from gdal_utils.gdal_utils import array_to_gtiff
 from atmospheric_correction.sensors import sensor_is
 
 
-def toaReflectance(inImg, metadataFile, sensor):
+def toa_reflectance(img, mtdfile, sensor):
     if sensor_is(sensor, 'WV'):
-        res = toaReflectanceWV2(inImg, metadataFile)
+        res = toa_reflectance_WV2(img, mtdfile)
     elif sensor_is(sensor, 'PHR'):
-        res = toaReflectancePHR1(inImg, metadataFile)
+        res = toa_reflectance_PHR1(img, mtdfile)
     elif sensor_is(sensor, 'L7L8'):
-        res = toaReflectanceL8(inImg, metadataFile)
+        res = toa_reflectance_L8(img, mtdfile)
     elif sensor_is(sensor, 'S2'):
-        res = toaReflectanceS2(inImg, metadataFile)
+        res = toa_reflectance_S2(img, mtdfile)
     return res
 
 
-def toaReflectanceWV2(inImg, metadataFile):
+def toa_reflectance_WV2(img, mtdfile):
     """Estimate toa reflectance of radiometric WV2 data ignoric atmospheric, topographic and
        BRDF effects.
 
@@ -46,7 +46,7 @@ def toaReflectanceWV2(inImg, metadataFile):
     satIdRegex           = "\s*satId\s*=\s*\"(.*)\";"
 
     # get year, month, day and time and sun zenith angle from the metadata file
-    with open(metadataFile, 'r') as metadata:
+    with open(mtdfile, 'r') as metadata:
         for line in metadata:
             match = re.match(firstLineTimeRegex, line)
             if not match:
@@ -76,37 +76,38 @@ def toaReflectanceWV2(inImg, metadataFile):
 
     # apply the radiometric correction factors to input image
     print("TOA reflectance")
-    reflectanceData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    bandNum = inImg.RasterCount
+    reflectance = np.zeros((img.RasterYSize, img.RasterXSize, img.RasterCount))
+    bandNum = img.RasterCount
     for band in range(bandNum):
         print(band + 1)
-        radData = inImg.GetRasterBand(band + 1).ReadAsArray()
-        reflectanceData[:, :, band] = np.where(np.isnan(radData), np.nan,
+        radData = img.GetRasterBand(band + 1).ReadAsArray()
+        reflectance[:, :, band] = np.where(np.isnan(radData), np.nan,
                                                (radData * des ** 2 * pi) / (ssi[band + 1] * cos(sza)))
 
-    return array_to_gtiff(reflectanceData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            reflectance, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toaReflectancePHR1(inImg, metadataFile):
-    # for now just do nothing
-    return inImg
+def toa_reflectance_PHR1(img, mtdfile):
+    # TODO implement
+    raise NotImplementedError()
 
 
-def toaReflectanceL8(inImg, metadataFile):
-    # todo Implement
-    return inImg
+def toa_reflectance_L8(img, mtdfile):
+    # TODO Implement
+    raise NotImplementedError()
 
 
-def toaReflectanceS2(inImg, metadataFile):
+def toa_reflectance_S2(img, mtdfile):
     """Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    rc = float(metadataFile['reflection_conversion'])
+    rc = float(mtdfile['reflection_conversion'])
     # Convert to TOA reflectance
     print("TOA reflectance")
-    rToa = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    for i in range(inImg.RasterCount):
-        print(i)
-        rToa[:, :, i] = inImg.GetRasterBand(i + 1).ReadAsArray().astype(float) / rc
+    reflectance = np.zeros((img.RasterYSize, img.RasterXSize, img.RasterCount))
+    for i in range(img.RasterCount):
+        reflectance[:, :, i] = img.GetRasterBand(i + 1).ReadAsArray().astype(float) / rc
 
-    return array_to_gtiff(rToa, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            reflectance, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)

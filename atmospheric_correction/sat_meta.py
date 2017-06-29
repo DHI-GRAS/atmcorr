@@ -1,6 +1,18 @@
 import os
+import re
 import glob
 from xml.etree import ElementTree as ET
+
+
+def tile_from_fname(fname):
+    """Get S2 tile from file name"""
+    fname = os.path.basename(fname)
+    try:
+        re.search('\d{2}[A-Z]{3}', fname).group(0)
+    except AttributeError:
+        raise ValueError(
+                'Unable to get tile from fname \'{}\'.'
+                ''.format(fname))
 
 
 def _find_granule_metadata_relpath(mtdfile, granule):
@@ -15,7 +27,7 @@ def _find_granule_metadata_relpath(mtdfile, granule):
                 ''.format(pattern))
 
 
-def parse_granule_metafile(mtdfile_tile, granule=None, granulekey=None):
+def parse_granule_metafile(mtdfile_tile):
     # read metadata of tile
     tree = ET.parse(mtdfile_tile)
     root = tree.getroot()
@@ -55,7 +67,9 @@ def parse_granule_metafile(mtdfile_tile, granule=None, granulekey=None):
 
     # save to dictionary
     if granulekey is None:
-        granulekey = granule[len(granule)-13:-7]
+        if granulename is None:
+            raise ValueError('granulename must be specified if granulekey is None')
+        granulekey = granulename[len(granulename)-13:-7]
     return {
         granulekey: {
             'sun_zenit': sunZen,
@@ -114,9 +128,6 @@ def readMetadataS2L1C(mtdfile, mtdfile_tile=None, tile=None):
     metadict['granules'] = []
 
     if mtdfile_tile is not None:
-        if tile is None:
-            raise ValueError(
-                    '`mtdfile_tile` must be provided together with `tile`.')
         gdict = parse_granule_metafile(mtdfile_tile, granulekey=tile)
         metadict.update(gdict)
         metadict['granules'].append(tile)
@@ -132,6 +143,7 @@ def readMetadataS2L1C(mtdfile, mtdfile_tile=None, tile=None):
         granulekey = list(metadict.keys())[0]
         metadict['granules'].append(granulekey)
     return metadict
+
 
 def readMetadataS2L2A(mtdfile, mtdfile_tile):
     # Get parameters from main metadata file

@@ -3,12 +3,26 @@ from xml.etree import ElementTree as ET
 
 from Py6S import Geometry
 
+from atmospheric_correction.sensors import sensor_is
 
-def readGeometryPHR1(metadataFile, model6S):
 
-    s = model6S
+def set_geometry(sensor, mtdfile, mysixs):
+    if sensor_is(sensor, 'WV'):
+        res = set_geometry_WV2(mtdfile, mysixs)
+    elif sensor_is(sensor, 'PHR'):
+        res = set_geometry_PHR1(mtdfile, mysixs)
+    elif sensor_is(sensor, 'L7L8'):
+        res = set_geometry_L8(mtdfile, mysixs)
+    elif sensor_is(sensor, 'S2'):
+        res = set_geometry_S2(mtdfile, mysixs)
+    return res
 
-    tree = ET.parse(metadataFile)
+
+def set_geometry_PHR1(mtdfile, mysixs):
+
+    s = mysixs
+
+    tree = ET.parse(mtdfile)
 
     # get down to the appropirate node
     root = tree.getroot()
@@ -45,7 +59,7 @@ def readGeometryPHR1(metadataFile, model6S):
     s.geometry.month = month
 
 
-def readGeometryWV2(metadataFile, s):
+def set_geometry_WV2(mtdfile, s):
     # read viewing gemotery from WV2 metadata file
     meanSunElRegex = "\s*meanSunEl\s*=\s*(.*);"
     meanSunAzRegex = "\s*meanSunAz\s*=\s*(.*);"
@@ -57,7 +71,7 @@ def readGeometryWV2(metadataFile, s):
 
     month, day, sunEl, sunAz, satEl, satAz = 0, 0, 0, 0, 0, 0
 
-    with open(metadataFile, 'r') as metadata:
+    with open(mtdfile, 'r') as metadata:
         for line in metadata:
             match = re.match(firstLineTimeRegex, line)
             if not match:
@@ -96,11 +110,9 @@ def readGeometryWV2(metadataFile, s):
     s.geometry.month = month
 
 
-def readGeometryL8(metadataFile, model6S, extent):
-
-    s = model6S
-
+def set_geometry_L8(mtdfile, mysixs, extent):
     # read viewing gemotery from Landsat metadata file
+
     sunElRegex = "\s*SUN_ELEVATION\s*=\s*(.*)\s*"
     sunAzRegex = "\s*SUN_AZIMUTH\s*=\s*(.*)\s*"
     dateAcquiredRegex = "\s*DATE_ACQUIRED\s*=\s*\d{4}-(\d{2})-(\d{2})\s*"
@@ -110,7 +122,7 @@ def readGeometryL8(metadataFile, model6S, extent):
     month = 0; day = 0; sunEl = 0.0; sunAz = 0.0; satZen = 0.0; satAz = 0.0;
     minX = 0; maxX = 0
 
-    with open(metadataFile, 'r') as metadata:
+    with open(mtdfile, 'r') as metadata:
         for line in metadata:
             match = re.match(dateAcquiredRegex, line)
             if match:
@@ -131,6 +143,7 @@ def readGeometryL8(metadataFile, model6S, extent):
 
     sunZen = 90 - sunEl
 
+    s = mysixs
     s.geometry = Geometry.User()
     s.geometry.solar_z = sunZen
     s.geometry.solar_a = sunAz
@@ -147,21 +160,21 @@ def readGeometryL8(metadataFile, model6S, extent):
     s.geometry.month = month
 
 
-def readGeometryS2(metadataFile, model6S):
+def set_geometry_S2(mtdfile, mysixs):
     # Get the granule metadata from metadata dictionary
-    sunZen = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
-    sunAz = float(metadataFile[metadataFile['current_granule']]['sun_azimuth'])
-    sensorZen = float(metadataFile[metadataFile['current_granule']]['sensor_zenit'])
-    sensorAz = float(metadataFile[metadataFile['current_granule']]['sensor_azimuth'])
+    sunZen = float(mtdfile[mtdfile['current_granule']]['sun_zenit'])
+    sunAz = float(mtdfile[mtdfile['current_granule']]['sun_azimuth'])
+    sensorZen = float(mtdfile[mtdfile['current_granule']]['sensor_zenit'])
+    sensorAz = float(mtdfile[mtdfile['current_granule']]['sensor_azimuth'])
 
-    dateTime = metadataFile['product_start']
+    dateTime = mtdfile['product_start']
     dayMonthRegex = "\d{4}-(\d{2})-(\d{2})T"
     match = re.match(dayMonthRegex, dateTime)
     if match:
         month = int(match.group(1))
         day = int(match.group(2))
 
-    s = model6S
+    s = mysixs
     s.geometry = Geometry.User()
     s.geometry.solar_z = sunZen
     s.geometry.solar_a = sunAz
