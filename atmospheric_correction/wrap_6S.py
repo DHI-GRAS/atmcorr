@@ -72,12 +72,15 @@ def fun_SixS(args):
 
 def getCorrectionParams6S(
         metadataFile,
-        atm={'AOT': -1, 'PWV': -1, 'ozone': -1},
+        atm=None,
         sensor="WV2",
         isPan=False,
         aeroProfile="Continental",
         extent=None,
         nprocs=None):
+
+    if atm is None:
+        atm = {'AOT': -1, 'PWV': -1, 'ozone': -1}
 
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
@@ -90,7 +93,8 @@ def getCorrectionParams6S(
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
     for i, band in enumerate(bandFilters):
-        bandFilters[i] = band_filters.resampleBandFilters(band, startWV, endWV, 0.0025)
+        bandFilters[i] = band_filters.resample_band_filters(
+                band, startWV, endWV, 0.0025)
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
@@ -109,7 +113,10 @@ def getCorrectionParams6S(
             len(jobs), nprocs)
     output = []
     s = None
-    for res in tqdm(pool.imap(fun_SixS, jobs), desc='Atmospheric Correction 6S', unit='job'):
+    for res in tqdm(
+            pool.imap(fun_SixS, jobs),
+            desc='Atmospheric Correction 6S',
+            unit='job'):
         output.append(res[0])
         s = res[1]
     pool.close()
@@ -118,28 +125,43 @@ def getCorrectionParams6S(
 
 
 def performAtmCorrection(inImg, correctionParams6S, radius=1, s=None):
-    refl = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount), dtype='float32')
-    pixelSize = inImg.GetGeoTransform()[1]  # assume same horizontal and vertical resolution
+    shape = (inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount)
+    refl = np.zeros(shape, dtype='float32')
+    # assume same horizontal and vertical resolution
+    pixelSize = inImg.GetGeoTransform()[1]
 
-    for bandNum in trange(len(correctionParams6S), desc='performAtmCorrection', unit='band'):
-        correctionParam = correctionParams6S[bandNum]
+    nbands = len(correctionParams6S)
+
+    for b in trange(nbands, desc='atmcorr', unit='band'):
+        correctionParam = correctionParams6S[b]
         # Read uncorrected radiometric data and correct
-        radianceData = inImg.GetRasterBand(bandNum + 1).ReadAsArray()
+        radiance = inImg.GetRasterBand(b + 1).ReadAsArray()
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
-        xa = explodeCorrectionParam(correctionParam['xa'], radianceData.shape)
-        xb = explodeCorrectionParam(correctionParam['xb'], radianceData.shape)
-        xc = explodeCorrectionParam(correctionParam['xc'], radianceData.shape)
+        xa = explodeCorrectionParam(correctionParam['xa'], radiance.shape)
+        xb = explodeCorrectionParam(correctionParam['xb'], radiance.shape)
+        xc = explodeCorrectionParam(correctionParam['xc'], radiance.shape)
 
         # Perform the atmospheric correction
-        y = np.where(radianceData == 0, np.nan, xa * radianceData - xb)
-        refl[:, :, bandNum] = np.where(np.isnan(y), 0, np.maximum(y / (1.0 + xc * y), 0.0))
+        y = xa * radiance - xb
+        y[(radiance == 0)] = np.nan
+        refl_band = y / (1.0 + xc * y)
+        refl_band = np.maximum(refl_band, 0.0)
+        refl_band[np.isnan(refl_band)] = 0.0
+        refl[:, :, b] = refl_band
 
-        # Perform adjecency correction if required
-        if s is not None:
-            logger.info('Performing adjacency correction for band {} ...'.format(bandNum+1))
-            refl[:, :, bandNum] = adjacencyCorrection(refl[:, :, bandNum], pixelSize, s, radius)
+    # Perform adjecency correction if required
+    if s is not None:
+        logger.info(
+                'Performing adjacency correction')
+        for b in trange(nbands, desc='adjcorr', unit='band'):
+            refl[:, :, b] = adjacencyCorrection(
+                    refl[:, :, b],
+                    pixelSize,
+                    s,
+                    radius)
+
     return gu.array_to_gtiff(
             refl, "MEM",
             inImg.GetProjection(), inImg.GetGeoTransform(),
