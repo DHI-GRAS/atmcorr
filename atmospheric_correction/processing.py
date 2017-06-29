@@ -6,7 +6,7 @@ import gdal_utils.gdal_utils as gu
 
 from . import modis_params
 from . import wrap_6S
-from . import metadata
+from .metadata import s2 as s2metadata
 from .sensors import sensor_is
 from .io_utils import getTileExtents
 from .toa.radiance import toa_radiance
@@ -22,7 +22,7 @@ def main_optdict(options):
 def main(
         sensor, dnFile, mtdfile, method,
         atm, aeroProfile, tileSizePixels,
-        isPan=False, adjCorr=True,
+        isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
         mtdfile_tile=None, tile=None, band_ids=None):
     """Main workflow function for atmospheric correction
@@ -48,6 +48,8 @@ def main(
         TODO: Who is Pan?
     adjCorr : bool
         perform adjacency correction
+    use_modis : bool
+        download atm parameters from MODIS
     aotMultiplier : float
         Atmospheric Optical Depth
         scale factor
@@ -72,9 +74,10 @@ def main(
 
     mtd_dict = mtdfile
     if sensor_is(sensor, 'S2'):
-        mtd_dict = metadata.readMetadataS2L1C(
+        mtd_dict = s2metadata.parse_mtdfile_S2L1C(
                 mtdfile=mtdfile,
-                mtdfile_tile=mtdfile_tile)
+                mtdfile_tile=mtdfile_tile,
+                tile=tile)
         logger.debug('S2 mtd dict:\n%s', mtd_dict)
         mtd_dict.update({
             'current_granule': tile,
@@ -105,9 +108,12 @@ def main(
         # If atmospheric parameters needed by 6S are not specified then
         # donwload and use MODIS atmopsheric products
         modisAtmDir = None
-        if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
-            logger.info('Retrieving MODIS atmospheric parameters ...')
-            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtd_dict, sensor)
+        if atm is None:
+            if use_modis:
+                logger.info('Retrieving MODIS atmospheric parameters ...')
+                modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtd_dict, sensor)
+            else:
+                atm = {'AOT': -1, 'PWV': -1, 'ozone': -1}
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
@@ -145,7 +151,7 @@ def main(
                 logger.debug("Ozone: " + str(atm['ozone']))
 
                 s, tileCorrectionParams = wrap_6S.getCorrectionParams6S(
-                        sensor=sensor, mtd_dict=mtd_dict, atm=atm, isPan=isPan,
+                        sensor=sensor, mtdfile=mtd_dict, atm=atm, isPan=isPan,
                         aeroProfile=aeroProfile, extent=extent, nprocs=nprocs)
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
