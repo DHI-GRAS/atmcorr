@@ -14,7 +14,7 @@ def set_geometry(sensor, mtdfile, mysixs):
     elif sensor_is(sensor, 'L7L8'):
         res = set_geometry_L8(mtdfile, mysixs)
     elif sensor_is(sensor, 'S2'):
-        res = set_geometry_S2(mtdfile, mysixs)
+        res = set_geometry_S2(mtd_dict=mtdfile, mysixs=mysixs)
     return res
 
 
@@ -160,14 +160,14 @@ def set_geometry_L8(mtdfile, mysixs, extent):
     s.geometry.month = month
 
 
-def set_geometry_S2(mtdfile, mysixs):
+def set_geometry_S2(mtd_dict, mysixs):
     # Get the granule metadata from metadata dictionary
-    sunZen = float(mtdfile[mtdfile['current_granule']]['sun_zenit'])
-    sunAz = float(mtdfile[mtdfile['current_granule']]['sun_azimuth'])
-    sensorZen = float(mtdfile[mtdfile['current_granule']]['sensor_zenit'])
-    sensorAz = float(mtdfile[mtdfile['current_granule']]['sensor_azimuth'])
+    sunZen = float(mtd_dict[mtd_dict['current_granule']]['sun_zenit'])
+    sunAz = float(mtd_dict[mtd_dict['current_granule']]['sun_azimuth'])
+    sensorZen = float(mtd_dict[mtd_dict['current_granule']]['sensor_zenit'])
+    sensorAz = float(mtd_dict[mtd_dict['current_granule']]['sensor_azimuth'])
 
-    dateTime = mtdfile['product_start']
+    dateTime = mtd_dict['product_start']
     dayMonthRegex = "\d{4}-(\d{2})-(\d{2})T"
     match = re.match(dayMonthRegex, dateTime)
     if match:

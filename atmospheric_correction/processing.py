@@ -1,15 +1,16 @@
 import copy
 import logging
 
+import gdal
 import gdal_utils.gdal_utils as gu
 
 from . import modis_params
 from . import wrap_6S
-from . import sat_meta
+from . import metadata
 from .sensors import sensor_is
 from .io_utils import getTileExtents
 from .toa.radiance import toa_radiance
-from .toa.reflectance import toaReflectance
+from .toa.reflectance import toa_reflectance
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ def main_optdict(options):
 
 
 def main(
-        sensor, dnFile, mtdfile, atmCorrMethod,
+        sensor, dnFile, mtdfile, method,
         atm, aeroProfile, tileSizePixels,
         isPan=False, adjCorr=True,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
@@ -35,7 +36,7 @@ def main(
         path to digital numbers input file
     mtdfile : str
         path to mtdfile file
-    atmCorrMethod : str
+    method : str
         6S, RAD, DOS, TOA (same as DOS)
     atm : dict
         atmospheric parameters
@@ -69,26 +70,30 @@ def main(
     # keep unchanged copy
     atm_original = copy.deepcopy(atm)
 
-    mtdfile = mtdfile
+    mtd_dict = mtdfile
     if sensor_is(sensor, 'S2'):
-        mtdfile = sat_meta.readMetadataS2L1C(
+        mtd_dict = metadata.readMetadataS2L1C(
                 mtdfile=mtdfile,
                 mtdfile_tile=mtdfile_tile)
-        logger.debug('S2 mtdfile:\n%s', mtdfile)
-        # Add current granule (used to extract relevant mtdfile later...)
-        mtdfile.update({
+        logger.debug('S2 mtd dict:\n%s', mtd_dict)
+        mtd_dict.update({
             'current_granule': tile,
             'band_ids': band_ids})
 
     # DN -> Radiance -> Reflectance
-    if atmCorrMethod == "6S":
+    if method == "6S":
         doDOS = False
 
-        logger.info('Clipping image to ROI ...')
-        img = gu.cutline_to_shape_name(dnFile, roiFile)
+        if roiFile is not None:
+            logger.info('Clipping image to ROI ...')
+            img = gu.cutline_to_shape_name(dnFile, roiFile)
+        else:
+            img = gdal.open(dnFile)
+        if img is None:
+            raise RuntimeError('Unable to read dnFile.')
 
         logger.info('Computing TOA radiance ...')
-        radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS, isPan=isPan)
+        radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS, isPan=isPan)
 
         img = None
         reflectanceImg = None
@@ -102,7 +107,7 @@ def main(
         modisAtmDir = None
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
             logger.info('Retrieving MODIS atmospheric parameters ...')
-            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtdfile, sensor)
+            modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtd_dict, sensor)
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
@@ -140,7 +145,7 @@ def main(
                 logger.debug("Ozone: " + str(atm['ozone']))
 
                 s, tileCorrectionParams = wrap_6S.getCorrectionParams6S(
-                        sensor=sensor, mtdfile=mtdfile, atm=atm, isPan=isPan,
+                        sensor=sensor, mtd_dict=mtd_dict, atm=atm, isPan=isPan,
                         aeroProfile=aeroProfile, extent=extent, nprocs=nprocs)
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
@@ -160,26 +165,31 @@ def main(
             modis_params.deleteDownloadedModisFiles(modisAtmDir)
         radianceImg = None
 
-    elif atmCorrMethod in ["DOS", "TOA"]:
-        if atmCorrMethod == "DOS":
+    elif method in ["DOS", "TOA"]:
+        if method == "DOS":
             doDOS = True
         else:
             doDOS = False
-        img = gu.cutline_to_shape_name(dnFile, roiFile)
-        if not sensor_is(sensor, 'S2'):
-            radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS)
-            img = None
-            reflectanceImg = toaReflectance(radianceImg, mtdfile, sensor)
-            radianceImg = None
-        # S2 data is provided in L1C meaning in TOA reflectance
+        if roiFile is not None:
+            img = gu.cutline_to_shape_name(dnFile, roiFile)
         else:
-            reflectanceImg = toaReflectance(img, mtdfile, sensor)
-            img = None
+            img = gdal.open(dnFile)
+        if img is None:
+            raise RuntimeError('Unable to read dnFile.')
 
-    elif atmCorrMethod == "RAD":
+        if sensor_is(sensor, 'S2'):
+            # S2 data is provided in L1C meaning in TOA reflectance
+            reflectanceImg = toa_reflectance(img, mtd_dict, sensor)
+        else:
+            radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS)
+            reflectanceImg = toa_reflectance(radianceImg, mtd_dict, sensor)
+            radianceImg = None
+        img = None
+
+    elif method == "RAD":
         doDOS = False
         img = gu.cutline_to_shape_name(dnFile, roiFile)
-        radianceImg = toa_radiance(img, mtdfile, sensor, doDOS=doDOS)
+        radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS)
         reflectanceImg = radianceImg
 
     return reflectanceImg
