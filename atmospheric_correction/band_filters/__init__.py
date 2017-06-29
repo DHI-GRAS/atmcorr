@@ -105,7 +105,7 @@ def _read_csv(csvFilename, sensor, isPan):
     return startWV, endWV, bandFilters
 
 
-def resampleBandFilters(bandFilter, startWV, endWV, resolution):
+def resample_band_filters(bandFilter, startWV, endWV, resolution):
     """Resample the given band filter to specified spectral resolution"""
     x = np.linspace(startWV, endWV, len(bandFilter))
     f = interp1d(x, bandFilter, kind='slinear')
