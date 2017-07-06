@@ -9,8 +9,8 @@ from scipy import interpolate
 from tqdm import trange
 from tqdm import tqdm
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength
+import band_filters
 
-from . import band_filters
 from . import viewing_geometry
 
 logger = logging.getLogger(__name__)
@@ -84,7 +84,7 @@ def getCorrectionParams6S(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    startWV, endWV, bandFilters = band_filters.read_band_filters(sensor, isPan)
+    startWV, endWV, bandFilters = band_filters.get_band_filters(sensor, isPan)
     startWV /= 1000.0
     endWV /= 1000.0
 
