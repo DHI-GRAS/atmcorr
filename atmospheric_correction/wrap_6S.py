@@ -9,7 +9,7 @@ from scipy import interpolate
 from tqdm import trange
 from tqdm import tqdm
 from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength
-import band_filters
+import srcurves
 
 from . import viewing_geometry
 
@@ -21,7 +21,7 @@ PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 def setup_SixS(
         sensor,
         AOT, PWV, ozone, bandFilter,
-        aeroProfile, mtdfile, startWV, endWV):
+        aeroProfile, mtdfile, start_wv, end_wv):
 
     mysixs = SixS(PATH_6S)
 
@@ -52,7 +52,7 @@ def setup_SixS(
     # Set 6S geometry
     viewing_geometry.set_geometry(sensor, mtdfile, mysixs)
 
-    mysixs.wavelength = Wavelength(startWV, endWV, bandFilter)
+    mysixs.wavelength = Wavelength(start_wv, end_wv, bandFilter)
     return mysixs
 
 
@@ -84,15 +84,15 @@ def getCorrectionParams6S(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    startWV, endWV, bandFilters = band_filters.get_band_filters(sensor, isPan)
-    startWV /= 1000.0
-    endWV /= 1000.0
+    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, isPan)
+    start_wv /= 1000.0
+    end_wv /= 1000.0
 
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
-    for i, band in enumerate(bandFilters):
-        bandFilters[i] = band_filters.resample_band_filters(
-                band, startWV, endWV, 0.0025)
+    for i, band in enumerate(rcurves):
+        rcurves[i] = srcurves.resample_response_curves(
+                band, start_wv, end_wv, 0.0025)
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
@@ -104,9 +104,9 @@ def getCorrectionParams6S(
         bandFilter,
         aeroProfile,
         mtdfile,
-        startWV,
-        endWV)
-        for bandFilter in bandFilters]
+        start_wv,
+        end_wv)
+        for bandFilter in rcurves]
     logger.info(
             'Running %d atmospheric correction jobs on %d processors',
             len(jobs), nprocs)
