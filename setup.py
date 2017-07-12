@@ -6,7 +6,7 @@ setup(
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
-    packages=['atmospheric_correction'],
+    packages=['atmospheric_correction', 'atmospheric_correction.toa'],
     package_dir={'atmospheric_correction': ''},
     include_package_data=True,
     install_requires=[
