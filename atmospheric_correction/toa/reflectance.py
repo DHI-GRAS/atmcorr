@@ -4,7 +4,7 @@ from math import cos, radians, pi
 import numpy as np
 from gdal_utils.gdal_utils import array_to_gtiff
 
-from ..sensors import sensor_is
+from atmospheric_correction.sensors import sensor_is
 
 
 def toaReflectance(inImg, metadataFile, sensor):

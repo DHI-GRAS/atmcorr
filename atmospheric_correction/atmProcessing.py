@@ -36,7 +36,7 @@ def atmProcessingMain(options):
 
     # Commonly used filenames
     dnFile = options["dnFile"]
-    metadata = options["metadataFile"]
+    metadata = options["metadataFile"]  # can be dictionary or file path
     roiFile = options.get("roiFile", "")
 
     # Correction options
@@ -58,7 +58,10 @@ def atmProcessingMain(options):
             tile = _tile_from_fname(dnFile)
         metadata = readMetadataS2L1C(
                 mtdfile=options["metadataFile"],
-                mtdfile_tile=options.get('metadataFile_tile', None))
+                mtdfile_tile=options.get('metadataFile_tile', None),
+                band_ids=options.get('band_ids', None),
+                tile=tile)
+        logger.debug('S2 metadata:\n%s', metadata)
         # Add current granule (used to extract relevant metadata later...)
         metadata.update({'current_granule': tile})
 
@@ -66,8 +69,10 @@ def atmProcessingMain(options):
     if atmCorrMethod == "6S":
         doDOS = False
 
+        logger.info('Clipping image to ROI ...')
         inImg = cutline_to_shape_name(dnFile, roiFile)
 
+        logger.info('Computing TOA radiance ...')
         radianceImg = toaRadiance(inImg, metadata, sensor, doDOS=doDOS, isPan=isPan)
 
         inImg = None
@@ -81,6 +86,7 @@ def atmProcessingMain(options):
         # donwload and use MODIS atmopsheric products
         modisAtmDir = None
         if not (atm['AOT'] and atm['PWV'] and atm['ozone']):
+            logger.info('Retrieving MODIS atmospheric parameters ...')
             modisAtmDir = modis.downloadAtmParametersMODIS(dnFile, metadata, sensor)
 
         # Structure holding the 6S correction parameters has for each band in
@@ -127,9 +133,11 @@ def atmProcessingMain(options):
                             radianceImg, correctionParams, adjCorr, s)
 
         if tileSize > 0 or not adjCorr:
+            logger.info('Perform atm correction')
             reflectanceImg = performAtmCorrection(radianceImg, correctionParams, s=None)
 
         if modisAtmDir:
+            logger.info('MODIS cleanup')
             modis.deleteDownloadedModisFiles(modisAtmDir)
         radianceImg = None
 

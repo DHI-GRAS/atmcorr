@@ -15,7 +15,70 @@ def _find_granule_metadata_relpath(mtdfile, granule):
                 ''.format(pattern))
 
 
-def readMetadataS2L1C(mtdfile, mtdfile_tile=None):
+def parse_granule_metafile(mtdfile_tile, granule=None, granulekey=None):
+    # read metadata of tile
+    tree = ET.parse(mtdfile_tile)
+    root = tree.getroot()
+    namespace = root.tag.split('}')[0]+'}'
+    # Get sun geometry - use the mean
+    baseNodePath = "./"+namespace+"Geometric_Info/Tile_Angles/"
+    sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle/"
+    sunZen = root.find(sunGeometryNodeName+"ZENITH_ANGLE").text
+    sunAz = root.find(sunGeometryNodeName+"AZIMUTH_ANGLE").text
+    # Get sensor geometry - assume that all bands have the same angles
+    # (they differ slightly)
+    sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle/"
+    sensorZen = root.find(sensorGeometryNodeName+"ZENITH_ANGLE").text
+    sensorAz = root.find(sensorGeometryNodeName+"AZIMUTH_ANGLE").text
+    EPSG = tree.find("./"+namespace+"Geometric_Info/Tile_Geocoding/HORIZONTAL_CS_CODE").text
+    cldCoverPercent = tree.find("./"+namespace+"Quality_Indicators_Info/Image_Content_QI/CLOUDY_PIXEL_PERCENTAGE").text
+    for elem in tree.iter(tag='Size'):
+        if elem.attrib['resolution'] == '10':
+            rows_10 = int(elem[0].text)
+            cols_10 = int(elem[1].text)
+        if elem.attrib['resolution'] == '20':
+            rows_20 = int(elem[0].text)
+            cols_20 = int(elem[1].text)
+        if elem.attrib['resolution'] == '60':
+            rows_60 = int(elem[0].text)
+            cols_60 = int(elem[1].text)
+    for elem in tree.iter(tag='Geoposition'):
+        if elem.attrib['resolution'] == '10':
+            ULX_10 = int(elem[0].text)
+            ULY_10 = int(elem[1].text)
+        if elem.attrib['resolution'] == '20':
+            ULX_20 = int(elem[0].text)
+            ULY_20 = int(elem[1].text)
+        if elem.attrib['resolution'] == '60':
+            ULX_60 = int(elem[0].text)
+            ULY_60 = int(elem[1].text)
+
+    # save to dictionary
+    if granulekey is None:
+        granulekey = granule[len(granule)-13:-7]
+    return {
+        granulekey: {
+            'sun_zenit': sunZen,
+            'sun_azimuth': sunAz,
+            'sensor_zenit': sensorZen,
+            'sensor_azimuth': sensorAz,
+            'projection': EPSG,
+            'cloudCoverPercent': cldCoverPercent,
+            'rows_10': rows_10,
+            'cols_10': cols_10,
+            'rows_20': rows_20,
+            'cols_20': cols_20,
+            'rows_60': rows_60,
+            'cols_60': cols_60,
+            'ULX_10': ULX_10,
+            'ULY_10': ULY_10,
+            'ULX_20': ULX_20,
+            'ULY_20': ULY_20,
+            'ULX_60': ULX_60,
+            'ULY_60': ULY_60}}
+
+
+def readMetadataS2L1C(mtdfile, mtdfile_tile=None, tile=None):
 
     # Get parameters from main metadata file
     ProductName = os.path.basename(os.path.dirname(mtdfile))
@@ -49,78 +112,25 @@ def readMetadataS2L1C(mtdfile, mtdfile_tile=None):
                      'irradiance_values': e0})
     # granules
     metadict['granules'] = []
+
+    if mtdfile_tile is not None:
+        if tile is None:
+            raise ValueError(
+                    '`mtdfile_tile` must be provided together with `tile`.')
+        gdict = parse_granule_metafile(mtdfile_tile, granulekey=tile)
+        metadict.update(gdict)
+        metadict['granules'].append(tile)
+        return metadict
+
     glist = list(tree.iter(tag='Granules'))
     for elem in glist:
         granule = elem.attrib['granuleIdentifier']
+        mtdfile_tile = _find_granule_metadata_relpath(mtdfile, granule)
 
-        if mtdfile_tile is not None:
-            if len(glist) > 1:
-                raise ValueError(
-                        'mtdfile_tile should only be used for single-tile '
-                        'products. Fount {}.'.format(len(glist)))
-        else:
-            mtdfile_tile = _find_granule_metadata_relpath(mtdfile, granule)
-
-        # read metadata of tile
-        tree = ET.parse(mtdfile_tile)
-        root = tree.getroot()
-        namespace = root.tag.split('}')[0]+'}'
-        # Get sun geometry - use the mean
-        baseNodePath = "./"+namespace+"Geometric_Info/Tile_Angles/"
-        sunGeometryNodeName = baseNodePath+"Mean_Sun_Angle/"
-        sunZen = root.find(sunGeometryNodeName+"ZENITH_ANGLE").text
-        sunAz = root.find(sunGeometryNodeName+"AZIMUTH_ANGLE").text
-        # Get sensor geometry - assume that all bands have the same angles
-        # (they differ slightly)
-        sensorGeometryNodeName = baseNodePath+"Mean_Viewing_Incidence_Angle_List/Mean_Viewing_Incidence_Angle/"
-        sensorZen = root.find(sensorGeometryNodeName+"ZENITH_ANGLE").text
-        sensorAz = root.find(sensorGeometryNodeName+"AZIMUTH_ANGLE").text
-        EPSG = tree.find("./"+namespace+"Geometric_Info/Tile_Geocoding/HORIZONTAL_CS_CODE").text
-        cldCoverPercent = tree.find("./"+namespace+"Quality_Indicators_Info/Image_Content_QI/CLOUDY_PIXEL_PERCENTAGE").text
-        for elem in tree.iter(tag='Size'):
-            if elem.attrib['resolution'] == '10':
-                rows_10 = int(elem[0].text)
-                cols_10 = int(elem[1].text)
-            if elem.attrib['resolution'] == '20':
-                rows_20 = int(elem[0].text)
-                cols_20 = int(elem[1].text)
-            if elem.attrib['resolution'] == '60':
-                rows_60 = int(elem[0].text)
-                cols_60 = int(elem[1].text)
-        for elem in tree.iter(tag='Geoposition'):
-            if elem.attrib['resolution'] == '10':
-                ULX_10 = int(elem[0].text)
-                ULY_10 = int(elem[1].text)
-            if elem.attrib['resolution'] == '20':
-                ULX_20 = int(elem[0].text)
-                ULY_20 = int(elem[1].text)
-            if elem.attrib['resolution'] == '60':
-                ULX_60 = int(elem[0].text)
-                ULY_60 = int(elem[1].text)
-
-        # save to dictionary
-        granulekey = granule[len(granule)-13:-7]
+        gdict = parse_granule_metafile(mtdfile_tile, granule=granule)
+        metadict.update(gdict)
+        granulekey = list(metadict.keys())[0]
         metadict['granules'].append(granulekey)
-        metadict.update({
-            granulekey: {
-                'sun_zenit': sunZen,
-                'sun_azimuth': sunAz,
-                'sensor_zenit': sensorZen,
-                'sensor_azimuth': sensorAz,
-                'projection': EPSG,
-                'cloudCoverPercent': cldCoverPercent,
-                'rows_10': rows_10,
-                'cols_10': cols_10,
-                'rows_20': rows_20,
-                'cols_20': cols_20,
-                'rows_60': rows_60,
-                'cols_60': cols_60,
-                'ULX_10': ULX_10,
-                'ULY_10': ULY_10,
-                'ULX_20': ULX_20,
-                'ULY_20': ULY_20,
-                'ULX_60': ULX_60,
-                'ULY_60': ULY_60}})
     return metadict
 
 def readMetadataS2L2A(mtdfile, mtdfile_tile):

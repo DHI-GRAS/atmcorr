@@ -1,12 +1,12 @@
-from setuptools import setup
+from setuptools import setup, find_packages
 
 setup(
     name='atmospheric_correction',
-    version='0.2',
+    version='0.3',
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
-    find_packages=True,
+    packages=find_packages(),
     include_package_data=True,
     install_requires=[
         'tqdm',

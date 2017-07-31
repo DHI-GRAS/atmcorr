@@ -9,7 +9,7 @@ import numpy as np
 from tqdm import trange
 from gdal_utils.gdal_utils import array_to_gtiff
 
-from ..sensors import sensor_is
+from atmospheric_correction.sensors import sensor_is
 
 logger = logging.getLogger(__name__)
 
