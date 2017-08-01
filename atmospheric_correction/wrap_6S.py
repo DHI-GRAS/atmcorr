@@ -8,20 +8,33 @@ from scipy.ndimage import filters
 from scipy import interpolate
 from tqdm import trange
 from tqdm import tqdm
-from Py6S import SixS, AtmosProfile, AeroProfile, AtmosCorr, Wavelength
+from Py6S import SixS
+from Py6S import AtmosProfile
+from Py6S import AeroProfile
+from Py6S import AtmosCorr
+from Py6S import Wavelength
+from Py6S import Geometry
 import srcurves
 
-from . import viewing_geometry
+from atmospheric_correction import viewing_geometry as vg
 
 logger = logging.getLogger(__name__)
 
 PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 
+_geometry_attrs_to_keys = {
+        'solar_z': 'sun_zenith',
+        'solar_a': 'sun_azimuth',
+        'view_z': 'sensor_zenith',
+        'view_a': 'sensor_azimuth',
+        'day': 'day',
+        'month': 'month'}
+
 
 def setup_SixS(
         sensor,
         AOT, PWV, ozone, bandFilter,
-        aeroProfile, mtdfile, start_wv, end_wv):
+        aeroProfile, geometry_dict, start_wv, end_wv):
 
     mysixs = SixS(PATH_6S)
 
@@ -50,7 +63,10 @@ def setup_SixS(
     mysixs.atmos_corr = AtmosCorr.AtmosCorrLambertianFromReflectance(10)
 
     # Set 6S geometry
-    viewing_geometry.set_geometry(sensor, mtdfile, mysixs)
+    mysixs.geometry = Geometry.User()
+    for attrname in _geometry_attrs_to_keys:
+        key = _geometry_attrs_to_keys[attrname]
+        setattr(mysixs.geometry, attrname, geometry_dict[key])
 
     mysixs.wavelength = Wavelength(start_wv, end_wv, bandFilter)
     return mysixs
@@ -94,6 +110,8 @@ def getCorrectionParams6S(
         rcurves[i] = srcurves.resample_response_curves(
                 band, start_wv, end_wv, 0.0025)
 
+    geometry_dict = vg.get_geometry(sensor, mtdfile)
+
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
     jobs = [(
@@ -103,7 +121,7 @@ def getCorrectionParams6S(
         atm['ozone'],
         bandFilter,
         aeroProfile,
-        mtdfile,
+        geometry_dict,
         start_wv,
         end_wv)
         for bandFilter in rcurves]
