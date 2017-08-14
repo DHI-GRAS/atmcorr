@@ -14,7 +14,7 @@ from Py6S import AeroProfile
 from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
-import srcurves
+import sensor_response_curves as srcurves
 
 from atmospheric_correction import viewing_geometry as vg
 

@@ -72,17 +72,6 @@ def main(
     # keep unchanged copy
     atm_original = copy.deepcopy(atm)
 
-    mtd_dict = mtdfile
-    if sensor_is(sensor, 'S2'):
-        mtd_dict = s2metadata.parse_mtdfile_S2L1C(
-                mtdfile=mtdfile,
-                mtdfile_tile=mtdfile_tile,
-                tile=tile)
-        logger.debug('S2 mtd dict:\n%s', mtd_dict)
-        mtd_dict.update({
-            'current_granule': tile,
-            'band_ids': band_ids})
-
     # DN -> Radiance -> Reflectance
     if method == "6S":
         doDOS = False
@@ -96,7 +85,7 @@ def main(
             raise RuntimeError('Unable to read dnFile.')
 
         logger.info('Computing TOA radiance ...')
-        radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS, isPan=isPan)
+        radianceImg = toa_radiance(img, mtd_file, sensor, mtdfile_tile=mtdfile_tile, doDOS=doDOS, isPan=isPan)
 
         img = None
         reflectanceImg = None
@@ -111,7 +100,7 @@ def main(
         if atm is None:
             if use_modis:
                 logger.info('Retrieving MODIS atmospheric parameters ...')
-                modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtd_dict, sensor)
+                modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtd_file, sensor)
             else:
                 atm = {'AOT': -1, 'PWV': -1, 'ozone': -1}
 
@@ -151,7 +140,7 @@ def main(
                 logger.debug("Ozone: " + str(atm['ozone']))
 
                 s, tileCorrectionParams = wrap_6S.getCorrectionParams6S(
-                        sensor=sensor, mtdfile=mtd_dict, atm=atm, isPan=isPan,
+                        sensor=sensor, mtdfile=mtd_file, atm=atm, isPan=isPan,
                         aeroProfile=aeroProfile, extent=extent, nprocs=nprocs)
 
                 for band, bandCorrectionParams in enumerate(tileCorrectionParams):
@@ -185,17 +174,17 @@ def main(
 
         if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            reflectanceImg = toa_reflectance(img, mtd_dict, sensor)
+            reflectanceImg = toa_reflectance(img, mtd_file, sensor)
         else:
-            radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS)
-            reflectanceImg = toa_reflectance(radianceImg, mtd_dict, sensor)
+            radianceImg = toa_radiance(img, mtd_file, sensor, doDOS=doDOS)
+            reflectanceImg = toa_reflectance(radianceImg, mtd_file, sensor)
             radianceImg = None
         img = None
 
     elif method == "RAD":
         doDOS = False
         img = gu.cutline_to_shape_name(dnFile, roiFile)
-        radianceImg = toa_radiance(img, mtd_dict, sensor, doDOS=doDOS)
+        radianceImg = toa_radiance(img, mtd_file, sensor, doDOS=doDOS)
         reflectanceImg = radianceImg
 
     return reflectanceImg

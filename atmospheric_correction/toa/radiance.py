@@ -15,8 +15,11 @@ from atmospheric_correction import dos
 
 logger = logging.getLogger(__name__)
 
+_default_bands = {
+        'S2': list(range(9))}
 
-def toa_radiance(img, mtdfile, sensor, doDOS, isPan=False):
+
+def toa_radiance(img, mtdfile, sensor, doDOS, bandids=None, isPan=False, mtdfile_tile=None):
     if sensor_is(sensor, 'WV'):
         return toa_radiance_WV(img, mtdfile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'PHR'):
@@ -24,7 +27,7 @@ def toa_radiance(img, mtdfile, sensor, doDOS, isPan=False):
     elif sensor_is(sensor, 'L7L8'):
         return toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'S2'):
-        return toa_radiance_S2(img, mtd_dict=mtdfile)
+        return toa_radiance_S2(img, metadata=mtdfile, mtdfile_tile=mtdfile_tile, bandids=bandids)
 
 
 def toa_radiance_WV(img, mtdfile, doDOS, isPan, sensor):
@@ -163,35 +166,38 @@ def toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor):
             img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toa_radiance_S2(img, mtd_dict):
+def toa_radiance_S2(img, mtdfile, mtdfile_tile, band_ids=None):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters
     ----------
     img : gdal image
         input data
-    mtd_dict : dict
-        meta data
-
-    Metadata contents
-    -----------------
-    mtd_dict['band_ids'] : sequence, optional
-        band IDs (0-based)
-        default: 0-9
+    mtdfile : str
+        path to metadata file
+    mtdfile_tile : str
+        path to granule metadata file
+    band_ids : sequence of int
+        band IDs (0-based index of bands in img)
+        default: 0-8
 
     Note
     ----
     Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    rc = float(mtd_dict['reflection_conversion'])
-    u = float(mtd_dict['quantification_value'])
-    irradiance = [float(e) for e in mtd_dict['irradiance_values']]
-    sun_zenith = float(mtd_dict[mtd_dict['current_granule']]['sun_zenit'])
-    band_ids = mtd_dict.get('band_ids', None)
+    if mtdfile_tile is None:
+        raise ValueError('Tile metadata file required!')
+
     if band_ids is None:
-        logger.info('Assuming 9 bands')
-        band_ids = list(range(9))
+        band_ids = _default_bands['S2']
+
+    metadata = metamod.s2.parse_parse_mtdfile(mtdfile, mtdfile_tile=mtdfile_tile)
+    tile = list(metadata['granules'])[0]
+    rc = metadata['reflection_conversion']
+    u = metadata['quantification_value']
+    irradiance = metadata['irradiance_values']
+    sun_zenith = metadata[tile]['sun_zenith']
 
     # Convert to radiance
     logger.info("Radiometric correction")
