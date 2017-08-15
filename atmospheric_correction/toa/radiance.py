@@ -15,26 +15,23 @@ from atmospheric_correction import dos
 
 logger = logging.getLogger(__name__)
 
-_default_bands = {
-        'S2': list(range(9))}
 
-
-def toa_radiance(img, mtdfile, sensor, doDOS, bandids=None, isPan=False, mtdfile_tile=None):
+def toa_radiance(img, sensor, mtdFile, doDOS, band_ids=None, isPan=False, mtdFile_tile=None):
     if sensor_is(sensor, 'WV'):
-        return toa_radiance_WV(img, mtdfile, doDOS, isPan, sensor)
+        return toa_radiance_WV(img, mtdFile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'PHR'):
-        return toa_radiance_PHR1(img, mtdfile, doDOS)
+        return toa_radiance_PHR1(img, mtdFile, doDOS)
     elif sensor_is(sensor, 'L7L8'):
-        return toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor)
+        return toa_radiance_L8(img, mtdFile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'S2'):
-        return toa_radiance_S2(img, metadata=mtdfile, mtdfile_tile=mtdfile_tile, bandids=bandids)
+        return toa_radiance_S2(img, mtdFile=mtdFile, mtdFile_tile=mtdFile_tile, band_ids=band_ids)
 
 
-def toa_radiance_WV(img, mtdfile, doDOS, isPan, sensor):
+def toa_radiance_WV(img, mtdFile, doDOS, isPan, sensor):
     """Compute TOA radiance for WV"""
 
     gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
-    effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdfile)
+    effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
     scalefactor = abscalfactor / effectivebw * (2 - gain) - bias
 
     nbands = img.RasterCount
@@ -65,11 +62,11 @@ def toa_radiance_WV(img, mtdfile, doDOS, isPan, sensor):
             radiance, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toa_radiance_PHR1(img, mtdfile, doDOS=False):
+def toa_radiance_PHR1(img, mtdFile, doDOS=False):
     """Apply radiometric correction to Pleadis image,
        with DOS atmospheric correction optional.
     """
-    gain, bias = metamod.phr1.get_gain_bias_PHR1(mtdfile)
+    gain, bias = metamod.phr1.get_gain_bias_PHR1(mtdFile)
 
     nbands = img.RasterCount
     ny, nx = img.RasterYSize, img.RasterXSize
@@ -130,8 +127,8 @@ def read_landsat(img, sensor):
     return rawdata
 
 
-def toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor):
-    mult_factor, add_factor = metamod.l78.get_correction_factors(mtdfile)
+def toa_radiance_L8(img, mtdFile, doDOS, isPan, sensor):
+    mult_factor, add_factor = metamod.l78.get_correction_factors(mtdFile)
 
     rawdata = read_landsat(img, sensor)
     ny, nx, nbands = rawdata.shape
@@ -166,38 +163,37 @@ def toa_radiance_L8(img, mtdfile, doDOS, isPan, sensor):
             img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toa_radiance_S2(img, mtdfile, mtdfile_tile, band_ids=None):
+def toa_radiance_S2(img, mtdFile, mtdFile_tile, band_ids=None):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters
     ----------
     img : gdal image
         input data
-    mtdfile : str
+    mtdFile : str
         path to metadata file
-    mtdfile_tile : str
+    mtdFile_tile : str
         path to granule metadata file
     band_ids : sequence of int
         band IDs (0-based index of bands in img)
-        default: 0-8
 
     Note
     ----
     Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    if mtdfile_tile is None:
+    if mtdFile_tile is None:
         raise ValueError('Tile metadata file required!')
 
     if band_ids is None:
-        band_ids = _default_bands['S2']
+        band_ids = metamod.default_band_ids['S2']
 
-    metadata = metamod.s2.parse_parse_mtdfile(mtdfile, mtdfile_tile=mtdfile_tile)
+    metadata = metamod.s2.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
     tile = list(metadata['granules'])[0]
     rc = metadata['reflection_conversion']
     u = metadata['quantification_value']
     irradiance = metadata['irradiance_values']
-    sun_zenith = metadata[tile]['sun_zenith']
+    sun_zenith = metadata['granules'][tile]['sun_zenith']
 
     # Convert to radiance
     logger.info("Radiometric correction")

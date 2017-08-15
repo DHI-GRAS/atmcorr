@@ -31,7 +31,7 @@ def toa_reflectance_WV2(img, mtdfile):
 
     # Band averaged solar spectral irradiances at 1 AU Earth-Sun distance.
     # The first one is for panchromatic band.
-    # For WV2 coming from Table 4 from the document in units of (W/m^2/μm/str).
+    # For WV2 coming from Table 4 from the document in units of (W/m^2/\mum/str).
     # GE01 irradiance is from https://apollomapping.com/wp-content/user_uploads/2011/09/GeoEye1_Radiance_at_Aperture.pdf
     # and is in units of (mW/cm^2/mum/str)
     ssi = {"WV02":[1580.8140, 1758.2229, 1974.2416, 1856.4104, 1738.4791, 1559.4555, 1342.0695, 1069.7302, 861.2866],

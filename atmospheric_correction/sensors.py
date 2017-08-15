@@ -16,3 +16,11 @@ def sensor_is(sensor, key):
         else:
             return key == 'S2'
     raise ValueError('Unknown sensor \'{}\'.'.format(sensor))
+
+
+def sensor_group_bands(sensor):
+    """Get key of sensors that have similar sets of bands"""
+    for key in ['WV', 'PHR', 'L7', 'L8', 'S2']:
+        if sensor_is(sensor, key):
+            return key
+    raise ValueError('Unable to get sensor group for \'%s\'.'.format(sensor))

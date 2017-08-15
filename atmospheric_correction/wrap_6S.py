@@ -31,27 +31,52 @@ _geometry_attrs_to_keys = {
         'month': 'month'}
 
 
-def setup_SixS(
-        sensor,
-        AOT, PWV, ozone, bandFilter,
-        aeroProfile, geometry_dict, start_wv, end_wv):
+_aeroProfile_names = [
+        'NoAerosols',
+        'Continental',
+        'Maritime',
+        'Urban',
+        'Desert',
+        'BiomassBurning',
+        'Stratospheric']
 
+
+def setup_sixs(
+        sensor,
+        AOT, PWV, ozone, rcurve,
+        aeroProfile, geometry_dict, start_wv, end_wv):
+    """Set up 6S instance
+
+    Parameters
+    ----------
+    sensor : str
+        sensor name
+    AOT, PWV, ozone : float
+        atmospheric constituents
+    rcurve : ndarray
+        sensor response curve
+    aeroProfile : str
+        name of profile
+        must be attribute of Py6S.AeroProfile
+    geometry_dict : dict
+        from viewing_geometry
+    start_wv, end_wv : float
+        wave length range
+    """
     mysixs = SixS(PATH_6S)
 
     # Set 6S BRDF model to 1 m/mysixs wind ocean with typical salinity and pigment concentration
     # mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
     mysixs.atmos_profile = AtmosProfile.UserWaterAndOzone(PWV, ozone)
 
-    aeroProfileDict = {
-            "No Aerosols": AeroProfile.NoAerosols,
-            "Continental": AeroProfile.Continental,
-            "Maritime": AeroProfile.Maritime,
-            "Urban": AeroProfile.Urban,
-            "Desert": AeroProfile.Desert,
-            "BiomassBurning": AeroProfile.BiomassBurning,
-            "Stratospheric": AeroProfile.Stratospheric}
+    try:
+        aeroProfile_attr = getattr(AeroProfile, aeroProfile)
+    except (TypeError, AttributeError):
+        raise ValueError(
+                'aeroProfile \'{}\' not recognized. Try one of {}'
+                ''.format(aeroProfile, _aeroProfile_names))
 
-    mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfileDict[aeroProfile])
+    mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfile_attr)
     # get from MOD04 or MODATML2
     mysixs.aot550 = AOT
 
@@ -68,12 +93,12 @@ def setup_SixS(
         key = _geometry_attrs_to_keys[attrname]
         setattr(mysixs.geometry, attrname, geometry_dict[key])
 
-    mysixs.wavelength = Wavelength(start_wv, end_wv, bandFilter)
+    mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
     return mysixs
 
 
-def fun_SixS(setup_args):
-    mysixs = setup_SixS(setup_args)
+def _run_sixs(setup_args):
+    mysixs = setup_sixs(*setup_args)
     mysixs.run()
     xdict = {
             'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
@@ -89,9 +114,11 @@ def fun_SixS(setup_args):
 
 def getCorrectionParams6S(
         sensor,
-        mtdfile,
+        mtdFile,
         atm,
+        band_ids,
         isPan=False,
+        mtdFile_tile=None,
         aeroProfile="Continental",
         extent=None,
         nprocs=None):
@@ -100,7 +127,7 @@ def getCorrectionParams6S(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, isPan)
+    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, isPan, bandids=band_ids)
     start_wv /= 1000.0
     end_wv /= 1000.0
 
@@ -110,7 +137,7 @@ def getCorrectionParams6S(
         rcurves[i] = srcurves.resample_response_curves(
                 band, start_wv, end_wv, 0.0025)
 
-    geometry_dict = vg.get_geometry(sensor, mtdfile)
+    geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
@@ -119,21 +146,23 @@ def getCorrectionParams6S(
         atm['AOT'],
         atm['PWV'],
         atm['ozone'],
-        bandFilter,
+        rcurve,
         aeroProfile,
         geometry_dict,
         start_wv,
         end_wv)
-        for bandFilter in rcurves]
+        for rcurve in rcurves]
+    _run_sixs(jobs[0])
     logger.info(
             'Running %d atmospheric correction jobs on %d processors',
             len(jobs), nprocs)
     output = []
     mysixs = None
     for res in tqdm(
-            pool.imap(fun_SixS, jobs),
+            pool.imap(_run_sixs, jobs),
             desc='Atmospheric Correction 6S',
-            unit='job'):
+            unit='job',
+            total=len(jobs)):
         output.append(res[0])
         mysixs = res[1]
     pool.close()

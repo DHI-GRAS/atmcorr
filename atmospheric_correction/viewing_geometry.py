@@ -2,6 +2,7 @@ import re
 from xml.etree import ElementTree as ET
 
 from atmospheric_correction.sensors import sensor_is
+import atmospheric_correction.metadata as metamod
 
 _required = {'sun_zenith', 'sun_azimuth', 'sensor_zenith', 'sensor_azimuth', 'month', 'day'}
 
@@ -13,24 +14,24 @@ def _check_gdict(d):
                 'Geometry dict is lacking the following keys: {}'.format(_required - dkeys))
 
 
-def get_geometry(sensor, mtdfile):
+def get_geometry(sensor, mtdFile, mtdFile_tile=None):
     if sensor_is(sensor, 'WV'):
-        gdict = get_geometry_WV2(mtdfile)
+        gdict = get_geometry_WV2(mtdFile)
     elif sensor_is(sensor, 'PHR'):
-        gdict = get_geometry_PHR1(mtdfile)
+        gdict = get_geometry_PHR1(mtdFile)
     elif sensor_is(sensor, 'L7L8'):
-        gdict = get_geometry_L8(mtdfile)
+        gdict = get_geometry_L8(mtdFile)
     elif sensor_is(sensor, 'S2'):
-        gdict = get_geometry_S2(mtd_dict=mtdfile)
+        gdict = get_geometry_S2(mtdFile, mtdFile_tile)
     _check_gdict(gdict)
     return gdict
 
 
-def get_geometry_PHR1(mtdfile):
+def get_geometry_PHR1(mtdFile):
 
     gdict = {}
 
-    tree = ET.parse(mtdfile)
+    tree = ET.parse(mtdFile)
 
     # get down to the appropirate node
     root = tree.getroot()
@@ -61,7 +62,7 @@ def get_geometry_PHR1(mtdfile):
     return gdict
 
 
-def get_geometry_WV2(mtdfile):
+def get_geometry_WV2(mtdFile):
     # read viewing gemotery from WV2 metadata file
     meanSunEl_regex = "\s*meanSunEl\s*=\s*(.*);"
     meanSunAz_regex = "\s*meanSunAz\s*=\s*(.*);"
@@ -77,7 +78,7 @@ def get_geometry_WV2(mtdfile):
             "(\d{2})T(\d{2}):(\d{2}):(.*)Z;")
 
     gdict = {}
-    with open(mtdfile, 'r') as metadata:
+    with open(mtdFile, 'r') as metadata:
         for line in metadata:
             match = re.match(firstLineTime_regex, line)
             if not match:
@@ -114,7 +115,7 @@ def get_geometry_WV2(mtdfile):
     return gdict
 
 
-def get_geometry_L8(mtdfile, extent):
+def get_geometry_L8(mtdFile, extent):
     # read viewing gemotery from Landsat metadata file
 
     sun_elevation_regex = "\s*SUN_ELEVATION\s*=\s*(.*)\s*"
@@ -124,7 +125,7 @@ def get_geometry_L8(mtdfile, extent):
     maxX_regex = "\s*CORNER_UR_PROJECTION_X_PRODUCT\s*=\s*(\d+\.\d+)\s*"
 
     gdict = {}
-    with open(mtdfile, 'r') as metadata:
+    with open(mtdFile, 'r') as metadata:
         for line in metadata:
             match = re.match(dateAcquired_regex, line)
             if match:
@@ -156,22 +157,24 @@ def get_geometry_L8(mtdfile, extent):
     return gdict
 
 
-def get_geometry_S2(mtd_dict):
+def get_geometry_S2(mtdFile, mtdFile_tile):
     """Get geometry dictionaty for S2
 
     Parameters
     ----------
-    mtd_dict : dict
-        meta data dict from `satmeta`
+    mtfile_file
     """
-    granule = mtd_dict['current_granule']
-    granule_meta = mtd_dict[granule]
+    if mtdFile_tile is None:
+        raise ValueError('Tile metadata file is required.')
+    metadata = metamod.s2.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
+    tile = list(metadata['granules'])[0]
+    metadata_granule = metadata['granules'][tile]
     gdict = {}
     # Get the granule metadata from metadata dictionary
     copy_keys = ['sun_zenith', 'sun_azimuth', 'sensor_zenith', 'sensor_azimuth']
     for key in copy_keys:
-        gdict[key] = granule_meta[key]
-    d = mtd_dict['sensing_time']
+        gdict[key] = metadata_granule[key]
+    d = metadata['sensing_time']
     gdict['month'] = d.month
     gdict['day'] = d.day
     _check_gdict(gdict)

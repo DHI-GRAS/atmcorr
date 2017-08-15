@@ -2,6 +2,8 @@ import os
 import re
 from xml.etree import ElementTree as ET
 
+import dateutil.parser
+
 
 def find_tile_name(fname):
     """Get S2 tile from file name"""
@@ -12,10 +14,10 @@ def find_tile_name(fname):
         raise ValueError('Unable to find tile name in \'{}\'.'.format(fname))
 
 
-def parse_granule_mtdfile(mtdfile_tile):
+def parse_granule_mtdfile(mtdFile_tile):
     gdict = {}
     # read metadata of tile
-    tree = ET.parse(mtdfile_tile)
+    tree = ET.parse(mtdFile_tile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
     # find tile name
@@ -79,16 +81,16 @@ def parse_granule_mtdfile(mtdfile_tile):
     return {tile_name: gdict}
 
 
-def parse_mtdfile(mtdfile, mtdfile_tile=None):
+def parse_mtdfile(mtdFile, mtdFile_tile=None):
 
     # Get parameters from main metadata file
-    ProductName = os.path.basename(os.path.dirname(mtdfile))
-    tree = ET.parse(mtdfile)
+    ProductName = os.path.basename(os.path.dirname(mtdFile))
+    tree = ET.parse(mtdFile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
 
     baseNodePath = "./"+namespace+"General_Info/Product_Info/"
-    dateTimeStr = root.find(baseNodePath+"PRODUCT_START_TIME").text
+    sensing_time = dateutil.parser.parse(root.find(baseNodePath+"PRODUCT_START_TIME").text)
     procesLevel = root.find(baseNodePath+"PROCESSING_LEVEL").text
     spaceCraft = root.find(baseNodePath+"Datatake/SPACECRAFT_NAME").text
     orbitDirection = root.find(baseNodePath+"Datatake/SENSING_ORBIT_DIRECTION").text
@@ -102,22 +104,22 @@ def parse_mtdfile(mtdfile, mtdfile_tile=None):
         e0.append(float(node.text))
     metadict = {
             'product_name': ProductName,
-            'product_start': dateTimeStr,
+            'sensing_time': sensing_time,
             'processing_level': procesLevel,
             'spacecraft': spaceCraft,
             'orbit_direction': orbitDirection,
             'quantification_value': quantificationVal,
             'reflection_conversion': reflectConversion,
             'irradiance_values': e0}
-    if mtdfile_tile is not None:
-        metadict['granules'] = parse_granule_mtdfile(mtdfile_tile)
+    if mtdFile_tile is not None:
+        metadict['granules'] = parse_granule_mtdfile(mtdFile_tile)
     return metadict
 
 
-def _parse_granule_mtdfile_L2A(mtdfile_tile):
+def _parse_granule_mtdfile_L2A(mtdFile_tile):
     """Read metadata of tile"""
     raise NotImplementedError()
-    tree = ET.parse(mtdfile_tile)
+    tree = ET.parse(mtdFile_tile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
     # find tile name
@@ -176,16 +178,16 @@ def _parse_granule_mtdfile_L2A(mtdfile_tile):
     return {tile_name: gdict}
 
 
-def _parse_mtdfile_L2A(mtdfile, mtdfile_tile):
+def _parse_mtdfile_L2A(mtdFile, mtdFile_tile):
     raise NotImplementedError()
     # Get parameters from main metadata file
-    ProductName = os.path.basename(os.path.dirname(mtdfile))
-    tree = ET.parse(mtdfile)
+    ProductName = os.path.basename(os.path.dirname(mtdFile))
+    tree = ET.parse(mtdFile)
     root = tree.getroot()
     namespace = root.tag.split('}')[0]+'}'
 
     baseNodePath = "./"+namespace+"General_Info/L2A_Product_Info/"
-    dateTimeStr = root.find(baseNodePath+"PRODUCT_START_TIME").text
+    sensing_time = dateutil.parse.parse(root.find(baseNodePath+"PRODUCT_START_TIME").text)
     procesLevel = root.find(baseNodePath+"PROCESSING_LEVEL").text
     spaceCraft = root.find(baseNodePath+"Datatake/SPACECRAFT_NAME").text
     orbitDirection = root.find(baseNodePath+"Datatake/SENSING_ORBIT_DIRECTION").text
@@ -203,7 +205,7 @@ def _parse_mtdfile_L2A(mtdfile, mtdfile_tile):
     # save to dictionary
     metadict = {
             'product_name': ProductName,
-            'product_start': dateTimeStr,
+            'sensing_time': sensing_time,
             'processing_level': procesLevel,
             'spacecraft': spaceCraft,
             'orbit_direction': orbitDirection,
@@ -213,6 +215,6 @@ def _parse_mtdfile_L2A(mtdfile, mtdfile_tile):
             'reflection_conversion': reflectConversion,
             'irradiance_values': e0}
 
-    if mtdfile_tile is not None:
-        metadict['granules'] = _parse_granule_mtdfile_L2A(mtdfile_tile)
+    if mtdFile_tile is not None:
+        metadict['granules'] = _parse_granule_mtdfile_L2A(mtdFile_tile)
     return metadict
