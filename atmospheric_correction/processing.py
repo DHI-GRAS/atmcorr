@@ -4,13 +4,16 @@ import logging
 import numpy as np
 import gdal
 import gdal_utils.gdal_utils as gu
+import dateutil
 
-from atmospheric_correction import modis_params
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
 from atmospheric_correction import io_utils
 from atmospheric_correction import toa
-from atmospheric_correction import metadata as metamod
+import atmospheric_correction.metadata.bands as meta_bands
+import atmospheric_correction.metadata.dates as meta_dates
+
+# import modis_atm
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +27,7 @@ def main(
         atm, aeroProfile, tileSizePixels,
         isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
-        mtdFile_tile=None, band_ids=None):
+        mtdFile_tile=None, band_ids=None, date=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -65,11 +68,17 @@ def main(
         band IDs (0-based) from complete
         sensor band set
         required if not full se is used
+    date : datetime.datetime, optional
+        image date
+        will be retrieved from metadata
+        if not specified
     """
     # keep unchanged copy
     if atm is not None:
         atm_original = copy.deepcopy(atm)
-        atm = None  # unassign atm
+        atm = None
+    else:
+        atm_original = {'AOT': None, 'PWV': None, 'ozone': None}
 
     kwargs_toa_radiance = dict(
             isPan=isPan,
@@ -79,9 +88,15 @@ def main(
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
-        band_ids = metamod.bands.default_band_ids[sensor_group]
+        band_ids = meta_bands.default_band_ids[sensor_group]
+
+    if date is None:
+        date = meta_dates.get_sensing_date(sensor, mtdFile)
+    else:
+        date = dateutil.parser.parse(date)
 
     # DN -> Radiance -> Reflectance
+    reflectanceImg = None
     if method == "6S":
         doDOS = False
 
@@ -89,84 +104,82 @@ def main(
             logger.info('Clipping image to ROI ...')
             img = gu.cutline_to_shape_name(dnFile, roiFile)
         else:
-            img = gdal.open(dnFile)
-        if img is None:
-            raise RuntimeError('Unable to read dnFile.')
+            img = gu.gdal_open(dnFile)
 
         logger.info('Computing TOA radiance ...')
         radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-
         img = None
-        reflectanceImg = None
 
-        tileExtents = [[None]]
         if tileSizePixels > 0:
             tileExtents = io_utils.getTileExtents(radianceImg, tileSizePixels)
+        else:
+            tileExtents = np.array([[None]])
 
         # If atmospheric parameters needed by 6S are not specified then
         # donwload and use MODIS atmopsheric products
-        modisAtmDir = None
-        if atm_original is None:
-            if use_modis:
-                logger.info('Retrieving MODIS atmospheric parameters ...')
-                modisAtmDir = modis_params.downloadAtmParametersMODIS(dnFile, mtdFile, sensor)
-            else:
-                atm_original = {'AOT': -1, 'PWV': -1, 'ozone': -1}
+        if use_modis:
+            logger.info('Retrieving MODIS atmospheric parameters ...')
+            raise NotImplementedError()
+            # modisAtmDir = modis_atm.get_atm(extent, date)
 
         # Structure holding the 6S correction parameters has for each band in
         # the image a dictionary with arrays of values (one for each tile)
-        # of the three correction parameter
-        n_first = len(tileExtents[0])
-        n_extents = len(tileExtents)
-        empty = np.zeros(
-                (n_extents, n_first),
+        # of the three correction parameters
+        nrows, ncols = tileExtents.shape[:2]
+        _empty = np.zeros(
+                (nrows, ncols),
                 dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f8'] * 3)))
-        correctionParams = [empty.copy() for _ in range(radianceImg.RasterCount)]
+        correctionParams = [_empty.copy() for _ in range(radianceImg.RasterCount)]
 
         # Get 6S correction parameters for an extent of each tile
-        for j, tileRow in enumerate(tileExtents):
-            for i, extent in enumerate(tileRow):
+        nruns = nrows * ncols
+        for j in range(nrows):
+            for i in range(ncols):
+                extent = tileExtents[j, i]
+                atm = atm_original.copy()
                 # If MODIS atmospheric data was downloaded then use it to set
                 # different atmospheric parameters for each tile
-                if modisAtmDir:
+                if use_modis:
+                    raise NotImplementedError()
+                    atm_modis = None  # modis_atm.get_atm(date, extent)
                     atm = atm_original.copy()
-                    aot, pwv, ozone = modis_params.estimateAtmParametersMODIS(
-                            dnFile, modisAtmDir, extent=extent, yearDoy="",
-                            time=-1, roiShape=None)
-
-                    if not atm['AOT']:
-                        atm['AOT'] = aot
-                    if not atm['PWV']:
-                        atm['PWV'] = pwv
-                    if not atm['ozone']:
-                        atm['ozone'] = ozone
+                    for key in atm_modis:
+                        if key not in atm or atm[key] is None:
+                            atm[key] = atm_modis[key]
 
                 atm['AOT'] *= aotMultiplier
                 logger.debug("AOT: %s", atm['AOT'])
                 logger.debug("Water Vapour: %s", atm['PWV'])
                 logger.debug("Ozone: %s", atm['ozone'])
 
-                s, tileCorrectionParams = wrap_6S.getCorrectionParams6S(
-                        sensor=sensor, mtdFile=mtdFile, mtdFile_tile=mtdFile_tile,
-                        atm=atm, band_ids=band_ids, isPan=isPan,
-                        aeroProfile=aeroProfile, extent=extent, nprocs=nprocs)
+                mysixs, tilecp = wrap_6S.get_correction_params(
+                        sensor=sensor,
+                        mtdFile=mtdFile,
+                        mtdFile_tile=mtdFile_tile,
+                        atm=atm,
+                        band_ids=band_ids,
+                        isPan=isPan,
+                        aeroProfile=aeroProfile,
+                        extent=extent,
+                        nprocs=nprocs)
 
-                for band, bandCorrectionParams in enumerate(tileCorrectionParams):
-                    correctionParams[band]['xa'][j, i] = bandCorrectionParams['xa']
-                    correctionParams[band]['xb'][j, i] = bandCorrectionParams['xb']
-                    correctionParams[band]['xc'][j, i] = bandCorrectionParams['xc']
+                nbands = len(tilecp)
+                for b in range(nbands):
+                    correctionParams[b][j, i]['xa'] = tilecp[b]['xa']
+                    correctionParams[b][j, i]['xb'] = tilecp[b]['xb']
+                    correctionParams[b][j, i]['xc'] = tilecp[b]['xc']
+
                 if tileSizePixels == 0 and adjCorr:
-                    reflectanceImg = wrap_6S.performAtmCorrection(
-                            radianceImg, correctionParams, adjCorr, s)
+                    if nruns != 1:
+                        raise RuntimeError('Should be only one run with tileSizePixels=0')
+                    reflectanceImg = wrap_6S.perform_correction(
+                            radianceImg, correctionParams, adjCorr=True, mysixs=mysixs)
+                    break
 
         if tileSizePixels > 0 or not adjCorr:
             logger.info('Perform atm correction')
-            reflectanceImg = wrap_6S.performAtmCorrection(radianceImg, correctionParams, s=None)
-
-        if modisAtmDir:
-            logger.info('MODIS cleanup')
-            modis_params.deleteDownloadedModisFiles(modisAtmDir)
-        radianceImg = None
+            reflectanceImg = wrap_6S.perform_correction(
+                    radianceImg, correctionParams, adjCorr=False)
 
     elif method in ["DOS", "TOA"]:
         if method == "DOS":

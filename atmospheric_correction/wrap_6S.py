@@ -1,22 +1,23 @@
+from __future__ import division
 import os
 import logging
 import multiprocessing
 
 import numpy as np
-import gdal_utils.gdal_utils as gu
-from scipy.ndimage import filters
-from scipy import interpolate
-from tqdm import trange
-from tqdm import tqdm
+import scipy.ndimage
+import tqdm
 from Py6S import SixS
 from Py6S import AtmosProfile
 from Py6S import AeroProfile
 from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
+
+import gdal_utils.gdal_utils as gu
 import sensor_response_curves as srcurves
 
 from atmospheric_correction import viewing_geometry as vg
+from atmospheric_correction import utils
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +98,7 @@ def setup_sixs(
     return mysixs
 
 
-def _run_sixs(setup_args):
+def run_sixs(setup_args):
     mysixs = setup_sixs(*setup_args)
     mysixs.run()
     xdict = {
@@ -112,7 +113,7 @@ def _run_sixs(setup_args):
     return (xdict, retvals)
 
 
-def getCorrectionParams6S(
+def get_correction_params(
         sensor,
         mtdFile,
         atm,
@@ -152,14 +153,14 @@ def getCorrectionParams6S(
         start_wv,
         end_wv)
         for rcurve in rcurves]
-    _run_sixs(jobs[0])
+
     logger.info(
             'Running %d atmospheric correction jobs on %d processors',
             len(jobs), nprocs)
     output = []
     mysixs = None
-    for res in tqdm(
-            pool.imap(_run_sixs, jobs),
+    for res in tqdm.tqdm(
+            pool.imap(run_sixs, jobs),
             desc='Atmospheric Correction 6S',
             unit='job',
             total=len(jobs)):
@@ -170,81 +171,59 @@ def getCorrectionParams6S(
     return mysixs, output
 
 
-def performAtmCorrection(img, correctionParams6S, radius=1, mysixs=None):
-    shape = (img.RasterYSize, img.RasterXSize, img.RasterCount)
-    refl = np.zeros(shape, dtype='float32')
+def perform_correction(img, corrparams, radius=1, adjCorr=False, mysixs=None):
+    if adjCorr and mysixs is None:
+        raise ValueError('adjCorr requires sixs instance')
+    outshape = (img.RasterYSize, img.RasterXSize, img.RasterCount)
+    reflectance = np.zeros(outshape, dtype='float32')
     # assume same horizontal and vertical resolution
     pixelSize = img.GetGeoTransform()[1]
 
-    nbands = len(correctionParams6S)
-
-    for b in trange(nbands, desc='atmcorr', unit='band'):
-        correctionParam = correctionParams6S[b]
+    nbands = len(corrparams)
+    for b in tqdm.trange(nbands, desc='atmcorr', unit='band'):
+        corrparams_band = corrparams[b]
         # Read uncorrected radiometric data and correct
         radiance = img.GetRasterBand(b + 1).ReadAsArray()
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
-        xa = explodeCorrectionParam(correctionParam['xa'], radiance.shape)
-        xb = explodeCorrectionParam(correctionParam['xb'], radiance.shape)
-        xc = explodeCorrectionParam(correctionParam['xc'], radiance.shape)
+        xa = utils.imresize(corrparams_band['xa'], radiance.shape)
+        xb = utils.imresize(corrparams_band['xb'], radiance.shape)
+        xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
         y = xa * radiance - xb
-        y[(radiance == 0)] = np.nan
+        mask = radiance == 0
+        y[mask] = np.nan
         refl_band = y / (1.0 + xc * y)
         refl_band = np.maximum(refl_band, 0.0)
-        refl_band[np.isnan(refl_band)] = 0.0
-        refl[:, :, b] = refl_band
+        refl_band[mask] = 0.0
+        reflectance[:, :, b] = refl_band
 
     # Perform adjecency correction if required
-    if mysixs is not None:
-        logger.info(
-                'Performing adjacency correction')
-        for b in trange(nbands, desc='adjcorr', unit='band'):
-            refl[:, :, b] = adjacencyCorrection(
-                    refl[:, :, b],
+    if adjCorr:
+        logger.info('Performing adjacency correction')
+        for b in tqdm.trange(nbands, desc='adjcorr', unit='band'):
+            reflectance[:, :, b] = adjacency_correction(
+                    reflectance[:, :, b],
                     pixelSize,
                     mysixs,
                     radius)
 
     return gu.array_to_gtiff(
-            refl, "MEM",
+            reflectance, "MEM",
             img.GetProjection(), img.GetGeoTransform(),
             banddim=2)
 
 
-def explodeCorrectionParam(param, newshape):
-    # Interpolate the an array with parameters into the new shape
-    data = np.data(param)
-    ny, nx = data.shape
+def adjacency_correction(refl, pixelSize, mysixs, radius=1.0):
+    """Adjacency correction
 
-    # If there is only one value then assign it to each cell in the new data
-    if data.size == 1:
-        return np.zeros(newshape) + data[0]
-
-    # Otherwise interpolate
-    # At least two points in each dimension are needed for linerar interpolation
-    if ny == 1:
-        data = np.vstack((data, data))
-    if nx == 1:
-        data = np.hstack((data, data))
-
-    # Assume that the parameters are regularly spaced within the new data
-    dx = newshape[1] / nx
-    xx = (np.arange(nx) + 0.5) * dx
-
-    dy = newshape[0] / ny
-    yy = (np.arange(ny) + 0.5) * dy
-
-    f = interpolate.interp2d(xx, yy, data, fill_value=None)
-    explodedParam = f(range(newshape[1]), range(newshape[0]))
-    return explodedParam
-
-
-def adjacencyCorrection(refl, pixelSize, mysixs, radius=1.0):
-    # NEEDS TO BE DOUBLE CHECKED
-    # Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
+    Sources
+    -------
+    Following Ouaidrari & Vermote 1999: Operational Atmospheric Correction of Landsat TM Data
+    """
+    # TODO: NEEDS TO BE DOUBLE CHECKED
 
     # definition below eq (4)
     u_v, tau, T_dir, T_dif = np.cos(np.radians(mysixs[0])), mysixs[1], mysixs[2], mysixs[3]
@@ -265,8 +244,8 @@ def adjacencyCorrection(refl, pixelSize, mysixs, radius=1.0):
     # The adjacency effect can come from pixels within 1km
     # of the central pixel (Verhoef et al., 2003) so
     # sigma should be half of that in gaussian filter
-    sigma = radius/pixelSize
-    adjRefl = filters.gaussian_filter(refl, sigma)
+    sigma = radius / pixelSize
+    adjRefl = scipy.ndimage.filters.gaussian_filter(refl, sigma)
 
     # eq (8)
     t_d = T_dif - np.exp(-tau / u_v)
