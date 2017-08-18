@@ -24,7 +24,7 @@ def main_optdict(options):
 
 def main(
         sensor, dnFile, mtdFile, method,
-        atm, aeroProfile, tileSizePixels,
+        atm, aeroProfile, tileSizePixels=0,
         isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None):
