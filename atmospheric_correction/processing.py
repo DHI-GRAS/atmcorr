@@ -88,7 +88,10 @@ def main(
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
-        band_ids = meta_bands.default_band_ids[sensor_group]
+        try:
+            band_ids = meta_bands.default_band_ids[sensor_group]
+        except KeyError:
+            pass
 
     if date is None:
         date = meta_dates.get_sensing_date(sensor, mtdFile)
@@ -105,6 +108,9 @@ def main(
             img = gu.cutline_to_shape_name(dnFile, roiFile)
         else:
             img = gu.gdal_open(dnFile)
+
+            if band_ids is None:
+                band_ids = list(range(img.GetRasterCount()))
 
         logger.info('Computing TOA radiance ...')
         radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
@@ -207,5 +213,8 @@ def main(
         img = gu.cutline_to_shape_name(dnFile, roiFile)
         radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
         reflectanceImg = radianceImg
+
+    else:
+        raise ValueError('Unknown method \'{}\'.'.format(method))
 
     return reflectanceImg
