@@ -1,246 +1,209 @@
 import os
 import re
+import glob
 import logging
 from math import cos, radians, pi
-from xml.etree import ElementTree as ET
 
 from osgeo import gdal
 import numpy as np
 from tqdm import trange
 from gdal_utils.gdal_utils import array_to_gtiff
 
-from ..sensors import sensor_is
+from atmospheric_correction.sensors import sensor_is
+from atmospheric_correction import metadata as metamod
+from atmospheric_correction import dos
 
 logger = logging.getLogger(__name__)
 
 
-def toaRadiance(inImg, metadataFile, sensor, doDOS, isPan=False):
+def toa_radiance(img, sensor, mtdFile, doDOS, band_ids=None, isPan=False, mtdFile_tile=None):
     if sensor_is(sensor, 'WV'):
-        return toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor)
+        return toa_radiance_WV(img, mtdFile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'PHR'):
-        return toaRadiancePHR1(inImg, metadataFile, doDOS)
+        return toa_radiance_PHR1(img, mtdFile, doDOS)
     elif sensor_is(sensor, 'L7L8'):
-        return toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor)
+        return toa_radiance_L8(img, mtdFile, doDOS, isPan, sensor)
     elif sensor_is(sensor, 'S2'):
-        return toaRadianceS2(inImg, metadataFile)
+        return toa_radiance_S2(img, mtdFile=mtdFile, mtdFile_tile=mtdFile_tile, band_ids=band_ids)
 
 
-def toaRadianceWV(inImg, metadataFile, doDOS, isPan, sensor):
-    absCalFactorRegex = "\s*absCalFactor\s*=\s*(.*);"
-    effectiveBandwidthRegex = "\s*effectiveBandwidth\s*=\s*(.*);"
+def toa_radiance_WV(img, mtdFile, doDOS, isPan, sensor):
+    """Compute TOA radiance for WV"""
 
-    # get the correction factors from the metadata file, assuming the number and
-    # order of bands is the same in the image and the metadata file
-    effectiveBandwidth, absCalFactor = [], []
-    with open(metadataFile, 'r') as metadata:
-        for line in metadata:
-            match = re.match(absCalFactorRegex, line)
-            if match:
-                absCalFactor.append(float(match.group(1)))
-            match = re.match(effectiveBandwidthRegex, line)
-            if match:
-                effectiveBandwidth.append(float(match.group(1)))
+    gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
+    effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
+    scalefactor = abscalfactor / effectivebw * (2 - gain) - bias
 
-    bandNum = inImg.RasterCount
-    if sensor == "WV3":
-        # WV3 calibration factors
-        if isPan:
-            gain = [1.045]
-            bias = [2.22]
-        else:
-            gain = [1.157, 1.07, 1.082, 1.048, 1.028, 0.979, 1.006,
-                    0.975]  # as per calibration from DG released 3/6/2015
-            bias = [7.07, 4.253, 2.633, 2.074, 1.807, 2.633, 3.406,
-                    2.258]  # as per calibration from DG relased 3/6/2015
-    else:
-        # WV2 calibration factors
-        if isPan:
-            gain = [1.0264]
-            bias = [6.5783]
-        else:
-            gain = [0.8632, 1.001, 1.0436, 1.0305, 1.0249, 0.9779, 0.981, 0.9217]
-            bias = [6.6863, 2.399, 0.3973, 0.7744, -0.1495, 2.0383, 1.859, 2.0357]
+    nbands = img.RasterCount
 
     # perform dark object substraction
-    dosDN = bandNum * [0]
     if doDOS:
-        dosDN = darkObjectSubstraction(inImg)
+        logger.info("DOS correction")
+        dosDN = dos.do_dos(img)
+    else:
+        dosDN = np.zeros(nbands)
 
     # apply the radiometric correction factors to input image
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    for band in trange(bandNum, desc='Radiometric correction WV', unit='band'):
-        rawData = inImg.GetRasterBand(band + 1).ReadAsArray()
-        radiometricData[:, :, band] = np.where(np.logical_and((rawData - dosDN[band]) > 0, rawData < 65536),
-                                               rawData - dosDN[band], 0) * absCalFactor[band] / effectiveBandwidth[
-                                          band] * (2 - gain[band]) - bias[band]
+    radiance = np.zeros((img.RasterYSize, img.RasterXSize, img.RasterCount))
+    for b in trange(nbands, desc='Radiometric correction WV', unit='b'):
+        rawdata = img.GetRasterBand(b + 1).ReadAsArray()
+        mask = (rawdata - dosDN[b]) > 0
+        mask &= rawdata < 65536
 
-    validMask = np.sum(radiometricData, axis=2)
+        radiance_band = rawdata - dosDN[b]
+        radiance[mask, b] = radiance_band[mask]
+        radiance[:, :, b] *= scalefactor[b]
+
     # Mark the pixels which have all radiances of 0 as invalid
-    invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask, :] = 0
+    mask = np.sum(radiance, axis=2) > 0
+    radiance[~mask, :] = 0
 
-    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            radiance, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toaRadiancePHR1(inImg, metadataFile, doDOS=False):
+def toa_radiance_PHR1(img, mtdFile, doDOS=False):
     """Apply radiometric correction to Pleadis image,
        with DOS atmospheric correction optional.
     """
-    # get correction factors
-    gain = [0, 0, 0, 0]
-    bias = [0, 0, 0, 0]
+    gain, bias = metamod.phr1.get_gain_bias_PHR1(mtdFile)
 
-    # In the XML file the band order is specified as BGRN.
-    # However in reality it is RGBN. Therefore mapping is required
-    # between the two
-    bandMapping = {'B2': 0, 'B1': 1, 'B0': 2, 'B3': 3}
-
-    # get down to the appropirate node
-    tree = ET.parse(metadataFile)
-    root = tree.getroot()
-    Radiometric_Data = root.findall('Radiometric_Data')[0]
-    Radiometric_Calibration = Radiometric_Data.findall('Radiometric_Calibration')[0]
-    Instrument_Calibration = Radiometric_Calibration.findall('Instrument_Calibration')[0]
-    Band_Measurement_List = Instrument_Calibration.findall('Band_Measurement_List')[0]
-    for Band_Radiance in Band_Measurement_List.findall('Band_Radiance'):
-        band = Band_Radiance.findall('BAND_ID')[0].text
-        gain[bandMapping[band]] = float(Band_Radiance.findall('GAIN')[0].text)
-        bias[bandMapping[band]] = float(Band_Radiance.findall('BIAS')[0].text)
-
-    bandNum = inImg.RasterCount
+    nbands = img.RasterCount
+    ny, nx = img.RasterYSize, img.RasterXSize
 
     # perform dark object substraction
     if doDOS:
-        dosDN = darkObjectSubstraction(inImg)
+        logger.info("DOS correction")
+        dosDN = dos.do_dos(img)
     else:
-        dosDN = list(np.zeros(bandNum))
+        dosDN = list(np.zeros(nbands))
 
         # apply the radiometric correction factors to input image
     logger.info("Radiometric correctionPHR1")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-    validMask = np.zeros((inImg.RasterYSize, inImg.RasterXSize))
-    for band in range(bandNum):
+    radiance = np.zeros((ny, nx, nbands))
+    for band in range(nbands):
         logger.info(band + 1)
-        rawData = np.int_(inImg.GetRasterBand(band + 1).ReadAsArray())
-        radiometricData[:, :, band] = np.where(np.logical_and((rawData - dosDN[band]) > 0, rawData != 65536),
-                                               (rawData - dosDN[band]) / gain[band] + bias[band], 0)
-        validMask += radiometricData[:, :, band]
+        rawdata = np.int_(img.GetRasterBand(band + 1).ReadAsArray())
+        mask = (rawdata - dosDN[band]) > 0
+        mask &= rawdata != 65536
+        radiance[mask, band] = (rawdata - dosDN[band]) / gain[band] + bias[band]
 
     # Mark the pixels which have all radiances of 0 as invalid
-    invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask, :] = np.nan
+    allzero = np.all((radiance == 0), axis=-1)
+    radiance[allzero, :] = np.nan
 
-    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            radiance, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toaRadianceL8(inImg, metadataFile, doDOS, isPan, sensor):
-    multFactorRegex = "\s*RADIANCE_MULT_BAND_\d\s*=\s*(.*)\s*"
-    addFactorRegex = "\s*RADIANCE_ADD_BAND_\d\s*=\s*(.*)\s*"
+def read_landsat(img, sensor):
 
-    if inImg.RasterCount == 1:
-        if sensor == "L8":
-            # The first 5 bands in L8 are VIS/NIR
-            visNirBands = range(1,6)
-        elif sensor == "L7":
-            # The first 4 bands in L7 are VIS/NIR
-            visNirBands = range(1,5)
-        rawData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, len(visNirBands)))
-
-        # Raw Landsat 8/7 data has each band in a separate image. Therefore first open images with all the required band data.
-        imgDir = os.path.dirname(inImg.GetFileList()[0])
-        for _, _, files in os.walk(imgDir):
-            for name in sorted(files):
-                match = re.search('(([A-Z]{2}\d).+)_B(\d+)\.TIF$', name)
-                if match and int(match.group(3)) in visNirBands:
-                    band = int(match.group(3))
-                    logger.info(band)
-                    rawImg = gdal.Open(os.path.join(imgDir, name), gdal.GA_ReadOnly)
-                    rawData[:, :, band-1] = rawImg.GetRasterBand(1).ReadAsArray()
-                    rawData = np.int_(rawData)
-                    rawImg = None
-
-    # Panchromatic should only be one band but this way the isPan option can also
-    # be used to processed L8 images which are stacked in one file.
+    if img.RasterCount > 1:
+        # Panchromatic should only be one band but this way the isPan option can also
+        # be used to processed L8 images which are stacked in one file.
+        rawdata = np.zeros((img.RasterYSize, img.RasterXSize, img.RasterCount))
+        for i in range(img.RasterCount):
+            rawdata[:, :, i] = img.GetRasterBand(i+1).ReadAsArray()
     else:
-        rawData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, inImg.RasterCount))
-        for i in range(inImg.RasterCount):
-            rawData[:, :, i] = inImg.GetRasterBand(i+1).ReadAsArray()
+        visnirbands = metamod.l78.get_visnirbands(sensor)
+        rawdata = np.zeros((img.RasterYSize, img.RasterXSize, len(visnirbands)))
 
-    # get the correction factors from the metadata file, assuming the number and
-    # order of bands is the same in the image and the metadata file
-    multFactor = []
-    addFactor = []
-    with open(metadataFile, 'r') as metadata:
-        for line in metadata:
-            match = re.match(multFactorRegex, line)
-            if match:
-                multFactor.append(float(match.group(1)))
-            match = re.match(addFactorRegex, line)
-            if match:
-                addFactor.append(float(match.group(1)))
+        # Raw Landsat 8/7 data has each band in a separate image.
+        # Therefore first open images with all the required band data.
+        imgdir = os.path.dirname(img.GetFileList()[0])
+        pattern = os.path.join(imgdir, '*.TIF')
+        bandfiles = glob.glob(pattern)
+        for bf in sorted(bandfiles):
+            try:
+                bandstr = re.search('_B(\d+)\.TIF$', os.path.basename(bf)).group(1)
+                band = int(bandstr)
+            except AttributeError:
+                continue
+            if band in visnirbands:
+                logger.info(band)
+                bandimg = gdal.Open(os.path.join(imgdir, bf), gdal.GA_ReadOnly)
+                rawdata[:, :, band-1] = bandimg.GetRasterBand(1).ReadAsArray()
+                rawdata = np.int_(rawdata)
+    return rawdata
+
+
+def toa_radiance_L8(img, mtdFile, doDOS, isPan, sensor):
+    mult_factor, add_factor = metamod.l78.get_correction_factors(mtdFile)
+
+    rawdata = read_landsat(img, sensor)
+    ny, nx, nbands = rawdata.shape
 
     # perform dark object substraction
     if doDOS:
-        rawImg = array_to_gtiff(rawData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
-        dosDN  = darkObjectSubstraction(rawImg)
-        rawImg = None
+        logger.info("DOS correction")
+        bandimg = array_to_gtiff(
+                rawdata, "MEM", img.GetProjection(), img.GetGeoTransform(), banddim=2)
+        dosDN = dos(bandimg)
+        bandimg = None
     else:
-        dosDN = list(np.zeros(rawData.shape[2]))
+        dosDN = np.zeros(nbands)
 
     # apply the radiometric correction factors to input image
     logger.info("Radiometric correctionL8")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, rawData.shape[2]))
-    validMask       = np.zeros((inImg.RasterYSize, inImg.RasterXSize))
-    for band in range(rawData.shape[2]):
+    radiance = np.zeros(rawdata.shape)
+    for band in range(nbands):
         logger.info(band + 1)
-        radiometricData[:, :, band] = np.where((rawData[:, :, band] - dosDN[band]) > 0,
-                                               (rawData[:, :, band] - dosDN[band]) * multFactor[band] + addFactor[band],
-                                               0)
-        validMask += radiometricData[:, :, band]
+        mask = (rawdata[:, :, band] - dosDN[band]) > 0
+        radiance[~mask, band] = 0
+        radiance[mask, band] = (
+                (rawdata[mask, band] - dosDN[band]) * mult_factor[band] +
+                add_factor[band])
 
     # Mark the pixels which have all radiances of 0 as invalid
-    invalidMask = np.where(validMask > 0, False, True)
-    radiometricData[invalidMask, :] = np.nan
+    allzero = np.all((radiance == 0), axis=-1)
+    radiance[allzero, :] = np.nan
 
-    return array_to_gtiff(radiometricData, "MEM", inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
+    return array_to_gtiff(
+            radiance, "MEM",
+            img.GetProjection(), img.GetGeoTransform(), banddim=2)
 
 
-def toaRadianceS2(inImg, metadataFile):
+def toa_radiance_S2(img, mtdFile, mtdFile_tile, band_ids=None):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
+
+    Parameters
+    ----------
+    img : gdal image
+        input data
+    mtdFile : str
+        path to metadata file
+    mtdFile_tile : str
+        path to granule metadata file
+    band_ids : sequence of int
+        band IDs (0-based index of bands in img)
 
     Note
     ----
     Assumes a L1C product which contains TOA reflectance:
     https://sentinel.esa.int/web/sentinel/user-guides/sentinel-2-msi/product-types
     """
-    rc = float(metadataFile['reflection_conversion'])
-    u = float(metadataFile['quantification_value'])
-    e0 = [float(e) for e in metadataFile['irradiance_values']]
-    z = float(metadataFile[metadataFile['current_granule']]['sun_zenit'])
+    if mtdFile_tile is None:
+        raise ValueError('Tile metadata file required!')
+
+    if band_ids is None:
+        band_ids = metamod.default_band_ids['S2']
+
+    metadata = metamod.s2.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
+    tile = list(metadata['granules'])[0]
+    rc = metadata['reflection_conversion']
+    u = metadata['quantification_value']
+    irradiance = metadata['irradiance_values']
+    sun_zenith = metadata['granules'][tile]['sun_zenith']
 
     # Convert to radiance
     logger.info("Radiometric correction")
-    radiometricData = np.zeros((inImg.RasterYSize, inImg.RasterXSize, 9))
-    for i in range(9):
-        rToa = (inImg.GetRasterBand(i + 1).ReadAsArray().astype(float)) / rc
-        radiometricData[:, :, i] = (rToa * e0[i] * cos(radians(z))) / (pi * u)
+    radiance = np.zeros((img.RasterYSize, img.RasterXSize, len(band_ids)))
+    for i, band_id in enumerate(band_ids):
+        rToa = img.GetRasterBand(i + 1).ReadAsArray().astype(float)
+        rToa /= rc
+        factor = irradiance[band_id] * cos(radians(sun_zenith)) / (pi * u)
+        radiance[:, :, i] = rToa * factor
+
     return array_to_gtiff(
-            radiometricData, "MEM",
-            inImg.GetProjection(), inImg.GetGeoTransform(), banddim=2)
-
-
-def darkObjectSubstraction(inImg):
-    logger.info("DOS correction")
-    dosDN = []
-    tempData = inImg.GetRasterBand(1).ReadAsArray()
-    numElements = np.size(tempData[tempData != 0])
-    for band in range(1,inImg.RasterCount+1):
-        # use histogram with 2048 bins since WV2 has 11 bit radiometric resolution
-        hist, edges = np.histogram(
-                inImg.GetRasterBand(band).ReadAsArray(),
-                bins=2048, range=(1, 2048), density=False)
-        for i in range(1, len(hist)):
-            if hist[i] - hist[i-1] > (numElements-numElements*0.999999):
-                dosDN.append(i-1)
-                break
-    return dosDN
+            radiance, "MEM",
+            img.GetProjection(), img.GetGeoTransform(), banddim=2)
