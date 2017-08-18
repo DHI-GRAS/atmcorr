@@ -87,8 +87,6 @@ def get_geometry_WV2(mtdFile):
                 gdict['month'] = int(match.group(2))
                 gdict['day'] = int(match.group(3))
                 continue
-            else:
-                raise ValueError('This did not work so well.')
 
             match = re.match(meanSunEl_regex, line)
             if match:
