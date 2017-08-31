@@ -2,7 +2,6 @@ import copy
 import logging
 
 import numpy as np
-import gdal
 import gdal_utils.gdal_utils as gu
 import dateutil
 
@@ -27,7 +26,8 @@ def main(
         atm, aeroProfile, tileSizePixels=0,
         isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
-        mtdFile_tile=None, band_ids=None, date=None):
+        mtdFile_tile=None, band_ids=None, date=None,
+        outfile=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -72,6 +72,8 @@ def main(
         image date
         will be retrieved from metadata
         if not specified
+    outfile : str
+        path to output file
     """
     # keep unchanged copy
     if atm is not None:
@@ -98,19 +100,20 @@ def main(
     else:
         date = dateutil.parser.parse(date)
 
+    if roiFile is not None:
+        logger.info('Clipping image to ROI ...')
+        img = gu.cutline_to_shape_name(dnFile, roiFile)
+        logger.info('Done clipping.')
+    else:
+        img = gu.gdal_open(dnFile)
+
+    if band_ids is None:
+        band_ids = list(range(img.GetRasterCount()))
+
     # DN -> Radiance -> Reflectance
     reflectanceImg = None
     if method == "6S":
         doDOS = False
-
-        if roiFile is not None:
-            logger.info('Clipping image to ROI ...')
-            img = gu.cutline_to_shape_name(dnFile, roiFile)
-        else:
-            img = gu.gdal_open(dnFile)
-
-            if band_ids is None:
-                band_ids = list(range(img.GetRasterCount()))
 
         logger.info('Computing TOA radiance ...')
         radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
@@ -192,12 +195,6 @@ def main(
             doDOS = True
         else:
             doDOS = False
-        if roiFile is not None:
-            img = gu.cutline_to_shape_name(dnFile, roiFile)
-        else:
-            img = gdal.open(dnFile)
-        if img is None:
-            raise RuntimeError('Unable to read dnFile.')
 
         if sensors.sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
@@ -206,15 +203,16 @@ def main(
             radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             reflectanceImg = toa.toa_reflectance(radianceImg, mtdFile, sensor)
             radianceImg = None
-        img = None
 
     elif method == "RAD":
         doDOS = False
-        img = gu.cutline_to_shape_name(dnFile, roiFile)
         radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
         reflectanceImg = radianceImg
 
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
-    return reflectanceImg
+    if outfile is not None:
+        gu.dump_gtiff(reflectanceImg, outfile)
+    else:
+        return reflectanceImg
