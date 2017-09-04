@@ -1,14 +1,17 @@
+import os
 import copy
 import logging
 
 import numpy as np
-import gdal_utils.gdal_utils as gu
+import gdal_utils.gdal_binaries as gbin
 import dateutil
+import rasterio
 
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
 from atmospheric_correction import io_utils
-from atmospheric_correction import toa
+from atmospheric_correction.toa.radiance import toa_radiance
+from atmospheric_correction.toa.reflectance import toa_reflectance
 import atmospheric_correction.metadata.bands as meta_bands
 import atmospheric_correction.metadata.dates as meta_dates
 
@@ -22,8 +25,10 @@ def main_optdict(options):
 
 
 def main(
-        sensor, dnFile, mtdFile, method,
-        atm, aeroProfile, tileSizePixels=0,
+        sensor, mtdFile, method,
+        atm, aeroProfile,
+        dnFile=None, data=None, profile=None,
+        tileSizePixels=0,
         isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, roiFile=None, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None,
@@ -35,8 +40,6 @@ def main(
     sensor : str
         S2, WV2, WV3, PHR1A, PHR1B, SPOT6,
         L7, L8, S2
-    dnFile : str
-        path to digital numbers input file
     mtdFile : str
         path to mtdFile file
     method : str
@@ -45,6 +48,15 @@ def main(
         atmospheric parameters
     aeroProfile : dict
         TODO: what is this?
+    dnFile : str, optional
+        path to digital numbers input file
+        instead, you can also provide the data
+    data : ndarray, optional
+        digital numbers input data
+        can be used instead of dnFile
+    profile : dict, optional
+        rasterio file profile
+        required when using data
     tileSizePixels : int
         tile size in pixels
     isPan : bool
@@ -75,12 +87,8 @@ def main(
     outfile : str
         path to output file
     """
-    # keep unchanged copy
-    if atm is not None:
-        atm_original = copy.deepcopy(atm)
-        atm = None
-    else:
-        atm_original = {'AOT': None, 'PWV': None, 'ozone': None}
+    if data is not None and profile is None:
+        raise ValueError('Data and profile must be provided together.')
 
     kwargs_toa_radiance = dict(
             isPan=isPan,
@@ -92,6 +100,7 @@ def main(
     if band_ids is None:
         try:
             band_ids = meta_bands.default_band_ids[sensor_group]
+            logger.info('Assuming original set of %d bands.', len(band_ids))
         except KeyError:
             pass
 
@@ -100,27 +109,45 @@ def main(
     else:
         date = dateutil.parser.parse(date)
 
-    if roiFile is not None:
-        logger.info('Clipping image to ROI ...')
-        img = gu.cutline_to_shape_name(dnFile, roiFile)
-        logger.info('Done clipping.')
-    else:
-        img = gu.gdal_open(dnFile)
+    if data is None:
+        if roiFile is not None:
+            logger.info('Clipping image to ROI ...')
+            dnFile_clipped = '{}_clipped{}'.format(*os.path.splitext(dnFile))
+            gbin.cutline(dnFile, inshp=roiFile, outfile=dnFile_clipped)
+            dnFile = dnFile_clipped
+            logger.info('Done clipping.')
 
-    if band_ids is None:
-        band_ids = list(range(img.GetRasterCount()))
+        # load data
+        with rasterio.open(dnFile) as src:
+            data = src.read()
+            profile = src.profile.copy()
+
+    nbands = profile['count']
+    if len(band_ids) != nbands:
+        raise ValueError(
+                'Number of band IDs {} does not correspond to number of bands {}.',
+                ''.format(len(band_ids), nbands))
+
+    # keep unchanged copy
+    if atm is not None:
+        atm_original = copy.deepcopy(atm)
+        atm = None
+    else:
+        atm_original = {'AOT': None, 'PWV': None, 'ozone': None}
 
     # DN -> Radiance -> Reflectance
-    reflectanceImg = None
     if method == "6S":
         doDOS = False
 
         logger.info('Computing TOA radiance ...')
-        radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-        img = None
+        data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
 
         if tileSizePixels > 0:
-            tileExtents = io_utils.getTileExtents(radianceImg, tileSizePixels)
+            tileExtents = io_utils.getTileExtents(
+                    height=profile['height'],
+                    width=profile['width'],
+                    transform=profile['transform'],
+                    tileSize=tileSizePixels)
         else:
             tileExtents = np.array([[None]])
 
@@ -138,7 +165,7 @@ def main(
         _empty = np.zeros(
                 (nrows, ncols),
                 dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f8'] * 3)))
-        correctionParams = [_empty.copy() for _ in range(radianceImg.RasterCount)]
+        correctionParams = [_empty.copy() for _ in range(nbands)]
 
         # Get 6S correction parameters for an extent of each tile
         nruns = nrows * ncols
@@ -181,14 +208,13 @@ def main(
                 if tileSizePixels == 0 and adjCorr:
                     if nruns != 1:
                         raise RuntimeError('Should be only one run with tileSizePixels=0')
-                    reflectanceImg = wrap_6S.perform_correction(
-                            radianceImg, correctionParams, adjCorr=True, mysixs=mysixs)
+                    data = wrap_6S.perform_correction(
+                            data, correctionParams, adjCorr=True, mysixs=mysixs)
                     break
 
         if tileSizePixels > 0 or not adjCorr:
             logger.info('Perform atm correction')
-            reflectanceImg = wrap_6S.perform_correction(
-                    radianceImg, correctionParams, adjCorr=False)
+            data = wrap_6S.perform_correction(data, correctionParams, adjCorr=False)
 
     elif method in ["DOS", "TOA"]:
         if method == "DOS":
@@ -198,21 +224,20 @@ def main(
 
         if sensors.sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            reflectanceImg = toa.toa_reflectance(img, mtdFile, sensor)
+            data = toa_reflectance(data, mtdFile, sensor)
         else:
-            radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            reflectanceImg = toa.toa_reflectance(radianceImg, mtdFile, sensor)
-            radianceImg = None
+            data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+            data = toa_reflectance(data, mtdFile, sensor)
 
     elif method == "RAD":
         doDOS = False
-        radianceImg = toa.toa_radiance(img, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-        reflectanceImg = radianceImg
+        data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
 
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
     if outfile is not None:
-        gu.dump_gtiff(reflectanceImg, outfile)
+        with rasterio.open(outfile, 'w', **profile) as dst:
+            dst.write(data)
     else:
-        return reflectanceImg
+        return data

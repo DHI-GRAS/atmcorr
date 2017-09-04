@@ -1,3 +1,3 @@
-import wv
-import phr1
-import s2
+from . import wv
+from . import phr1
+from . import s2

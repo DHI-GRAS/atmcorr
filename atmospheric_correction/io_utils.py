@@ -2,13 +2,15 @@ from __future__ import division
 import numpy as np
 
 
-def getTileExtents(img, tileSize):
+def getTileExtents(width, height, transform, tileSize):
     """ Split the image into square tiles of tileSize pixels
 
     Parameters
     ----------
-    img : GDAL dataset
-        image
+    width, height : int
+        nx, ny shape of image
+    transform : affine.Affine
+        image transform
     tileSize : int
         number of pixels in each square tile
 
@@ -17,14 +19,14 @@ def getTileExtents(img, tileSize):
     extents : ([minX, maxY, maxX, minY])
         extents of each tile in the projected units.
     """
-    gt = img.GetGeoTransform()
+    gt = transform.to_gdal()
 
-    nx = int(img.RasterXSize // tileSize) + 1
-    ny = int(img.RasterYSize // tileSize) + 1
+    nx = int(width // tileSize) + 1
+    ny = int(height // tileSize) + 1
     rows = [int(i * tileSize) for i in range(ny)]
     cols = [int(i * tileSize) for i in range(nx)]
-    rows.append(img.RasterYSize)
-    cols.append(img.RasterXSize)
+    rows.append(height)
+    cols.append(width)
 
     nrows = len(rows)
     ncols = len(cols)
