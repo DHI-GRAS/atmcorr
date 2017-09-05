@@ -45,6 +45,7 @@ def toa_radiance(
     elif sensor_is(sensor, 'L7L8'):
         return toa_radiance_L8(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'S2'):
+        commonkw.pop('doDOS')
         return toa_radiance_S2(mtdFile_tile=mtdFile_tile, **commonkw)
 
 
@@ -63,10 +64,12 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     if doDOS:
         logger.info("DOS correction")
         dosDN = dos.do_dos(data)
+        logger.info('Done.')
     else:
         dosDN = np.zeros(nbands)
 
     # apply the radiometric correction factors to input image
+    logger.info('Radiometric correction')
     radiance = np.zeros(data.shape)
     for i in range(nbands):
         rawdata = data[i]
@@ -81,6 +84,7 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     mask = np.sum(radiance, axis=2) > 0
     radiance[:, ~mask] = 0
 
+    logger.info('Done with radiometric correction.')
     return radiance
 
 
@@ -103,7 +107,7 @@ def toa_radiance_PHR1(data, mtdFile, band_ids, doDOS=False):
         dosDN = np.zeros(nbands)
 
         # apply the radiometric correction factors to input image
-    logger.info("Radiometric correctionPHR1")
+    logger.info("Radiometric correction PHR1")
     radiance = np.zeros(data.shape)
     for i in range(nbands):
         logger.info(i + 1)
@@ -116,6 +120,7 @@ def toa_radiance_PHR1(data, mtdFile, band_ids, doDOS=False):
     allzero = np.all((radiance == 0), axis=-1)
     radiance[allzero, :] = np.nan
 
+    logger.info('Done with radiometric correction.')
     return radiance
 
 
@@ -144,6 +149,7 @@ def toa_radiance_L8(data, mtdFile, sensor, band_ids, doDOS=False):
     allzero = np.all((radiance == 0), axis=0)
     radiance[allzero, :] = np.nan
 
+    logger.info('Done with radiometric correction.')
     return radiance
 
 
@@ -180,11 +186,11 @@ def toa_radiance_S2(data, mtdFile, mtdFile_tile, band_ids):
     irradiance = irradiance[band_ids]
 
     # Convert to radiance
-    logger.info("Radiometric correction")
-    radiance = np.zeros(data.shape)
+    logger.info('Radiometric correction')
+    factor = irradiance * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
+    radiance = data.astype(float)
     for i in range(data.shape[0]):
-        rToa = data[i, :, :].astype(float)
-        rToa /= rc
-        factor = irradiance[i] * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
-        radiance[i, :, :] = rToa * factor
+        radiance[i] /= rc
+        radiance[i] *= factor[i]
+    logger.info('Done with radiometric correction.')
     return radiance

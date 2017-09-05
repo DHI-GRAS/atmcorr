@@ -1,4 +1,5 @@
 import re
+import datetime
 
 import numpy as np
 
@@ -47,3 +48,95 @@ def get_effectivebw_abscalfactor_WV(mtdfile):
     if not abscalfactor:
         raise ValueError('Unable to get abs cal factor from mtdfile.')
     return np.array(effectivebw), np.array(abscalfactor)
+
+
+def _get_meta(mtdfile):
+
+    # depending on the product type there can be either
+    # firstLineTime or earliestAcqTime in the metadata file
+    firstLineTimeRegex = "\s*firstLineTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"
+    earliestAcqTimeRegex = "\s*earliestAcqTime\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;"
+    meanSunElRegex = "\s*meanSunEl\s*=\s*(.*);"
+    satIdRegex = "\s*satId\s*=\s*\"(.*)\";"
+
+    satID = None
+    sza = None
+    date = None
+    hours = None
+    # get year, month, day and time and sun zenith angle from the metadata file
+    with open(mtdfile, 'r') as metadata:
+        for line in metadata:
+            match = re.match(firstLineTimeRegex, line)
+            if not match:
+                match = re.match(earliestAcqTimeRegex, line)
+            if match:
+                year = int(match.group(1))
+                month = int(match.group(2))
+                day = int(match.group(3))
+                hours = (
+                        float(match.group(4)) +
+                        float(match.group(5))/60 +
+                        float(match.group(6))/3600)
+                date = datetime.datetime(year, month, day)
+            match = re.match(meanSunElRegex, line)
+            if match:
+                sun_el = float(match.group(1))
+                sza = np.radians(90 - sun_el)
+            match = re.match(satIdRegex, line)
+            if match:
+                satID = match.group(1)
+
+    if None in (satID, sza, date, hours):
+        raise ValueError('This did not work, as expected.')
+
+    return satID, sza, date, hours
+
+
+def get_earth_sun_distance(mtdfile):
+
+    # Band averaged solar spectral irradiances at 1 AU Earth-Sun distance.
+    # The first one is for panchromatic band.
+    # For WV2 coming from Table 4 from the document in units of (W/m^2/\mum/str).
+    # GE01 irradiance is from
+    # https://apollomapping.com/wp-content/user_uploads/2011/09/GeoEye1_Radiance_at_Aperture.pdf
+    # and is in units of (mW/cm^2/mum/str)
+    ssi = {
+            "WV02": [
+                1580.8140, 1758.2229, 1974.2416,
+                1856.4104, 1738.4791, 1559.4555,
+                1342.0695, 1069.7302, 861.2866],
+            "WV03": [
+                1574.41, 1757.89, 2004.61,
+                1830.18, 1712.07, 1535.33,
+                1348.08, 1055.94, 858.77],  # Thuillier 2003
+            "WV03_ChKur": [
+                 1578.28, 1743.9, 1974.53,
+                 1858.1, 1748.87, 1550.58,
+                 1303.4, 1063.92, 858.632],  # ChKur
+            "WV03_WRC": [
+                1583.58, 1743.81, 1971.48,
+                1856.26, 1749.4, 1555.11,
+                1343.95, 1071.98, 863.296],  # WRC
+            "GE01": [
+                161.7, 196.0, 185.3, 150.5, 103.9]}
+
+    satID, sza, date, hours = _get_meta(mtdfile)
+
+    ssi = ssi[satID]
+
+    # get actual Earth-Sun distance follwoing equations from
+    # Radiometric Use Of WorldView-2 Imagery - Technical note
+    year = date.year
+    month = date.month
+    day = date.day
+    if month < 3:
+        year -= 1.0
+        month += 12.0
+    A = int(year/100.0)
+    B = 2.0-A+int(A/4.0)
+    JD = int(365.25 * (year + 4716.0)) + int(30.6001 * (month + 1)) + day + hours / 24.0 + B - 1524.5
+    D = JD - 2451545.0
+    g = 357.529 + 0.98560025 * D
+    des = 1.00014 - 0.01671 * np.cos(np.radians(g)) - 0.00014 * np.cos(np.radians(2 * g))
+
+    return des, ssi, sza

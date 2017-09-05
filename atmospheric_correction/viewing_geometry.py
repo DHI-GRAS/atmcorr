@@ -1,6 +1,8 @@
 import re
 from xml.etree import ElementTree as ET
 
+import numpy as np
+
 from atmospheric_correction.sensors import sensor_is
 import atmospheric_correction.metadata as metamod
 
@@ -169,9 +171,12 @@ def get_geometry_S2(mtdFile, mtdFile_tile):
     metadata_granule = metadata['granules'][tile]
     gdict = {}
     # Get the granule metadata from metadata dictionary
-    copy_keys = ['sun_zenith', 'sun_azimuth', 'sensor_zenith', 'sensor_azimuth']
+    copy_keys = ['sun_zenith', 'sun_azimuth']
     for key in copy_keys:
         gdict[key] = metadata_granule[key]
+    average_keys = ['sensor_zenith', 'sensor_azimuth']
+    for key in average_keys:
+        gdict[key] = np.mean(metadata_granule[key])
     d = metadata['sensing_time']
     gdict['month'] = d.month
     gdict['day'] = d.day

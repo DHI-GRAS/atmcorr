@@ -90,12 +90,6 @@ def main(
     if data is not None and profile is None:
         raise ValueError('Data and profile must be provided together.')
 
-    kwargs_toa_radiance = dict(
-            isPan=isPan,
-            mtdFile=mtdFile,
-            mtdFile_tile=mtdFile_tile,
-            band_ids=band_ids)
-
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
         try:
@@ -103,6 +97,12 @@ def main(
             logger.info('Assuming original set of %d bands.', len(band_ids))
         except KeyError:
             pass
+
+    kwargs_toa_radiance = dict(
+            isPan=isPan,
+            mtdFile=mtdFile,
+            mtdFile_tile=mtdFile_tile,
+            band_ids=band_ids)
 
     if date is None:
         date = meta_dates.get_sensing_date(sensor, mtdFile)
@@ -138,6 +138,7 @@ def main(
     # DN -> Radiance -> Reflectance
     if method == "6S":
         doDOS = False
+        res = profile['transform'].a
 
         logger.info('Computing TOA radiance ...')
         data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
@@ -214,7 +215,8 @@ def main(
 
         if tileSizePixels > 0 or not adjCorr:
             logger.info('Perform atm correction')
-            data = wrap_6S.perform_correction(data, correctionParams, adjCorr=False)
+            data = wrap_6S.perform_correction(
+                    data, correctionParams, pixel_size=res, adjCorr=False)
 
     elif method in ["DOS", "TOA"]:
         if method == "DOS":
@@ -224,10 +226,10 @@ def main(
 
         if sensors.sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            data = toa_reflectance(data, mtdFile, sensor)
+            data = toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
         else:
             data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = toa_reflectance(data, mtdFile, sensor)
+            data = toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
 
     elif method == "RAD":
         doDOS = False
@@ -237,6 +239,7 @@ def main(
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
     if outfile is not None:
+        profile['dtype'] = 'float32'
         with rasterio.open(outfile, 'w', **profile) as dst:
             dst.write(data)
     else:
