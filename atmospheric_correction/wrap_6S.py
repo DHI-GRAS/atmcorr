@@ -20,6 +20,14 @@ from atmospheric_correction import utils
 
 logger = logging.getLogger(__name__)
 
+try:
+    import numexpr as ne
+    logger.debug('Using numexpr.')
+except ImportError:
+    ne = None
+    logger.debug('Not using numexpr.')
+
+
 PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 
 _geometry_attrs_to_keys = {
@@ -186,8 +194,8 @@ def get_correction_params(
     mysixs = None
     for res in tqdm.tqdm(
             pool.imap(run_sixs, jobs),
-            desc='Atmospheric Correction 6S',
-            unit='job',
+            desc='Getting correction parameters',
+            unit='band',
             total=len(jobs)):
         output.append(res[0])
         mysixs = res[1]
@@ -217,11 +225,11 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
     """
     if adjCorr and mysixs is None:
         raise ValueError('adjCorr requires sixs instance')
+
     reflectance = np.zeros(data.shape, dtype='f4')
-    # assume same horizontal and vertical resolution
 
     nbands = data.shape[0]
-    for i in tqdm.trange(nbands, desc='atmcorr', unit='band'):
+    for i in tqdm.trange(nbands, desc='Atmospheric correction', unit='band'):
         corrparams_band = corrparams[i]
         # Read uncorrected radiometric data and correct
         radiance = data[i]
@@ -233,20 +241,31 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
         xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
-        y = xa * radiance - xb
-        mask = radiance == 0
-        y[mask] = np.nan
-        refl_band = y / (1.0 + xc * y)
-        refl_band = np.maximum(refl_band, 0.0)
-        refl_band[mask] = 0.0
+        if ne is not None:
+            y = ne.evaluate('xa * radiance - xb')
+            mask = radiance == 0
+            y[mask] = np.nan
+            refl_band = ne.evaluate('y / (1.0 + xc * y)')
+            mask |= ne.evaluate('refl_band < 0')
+            refl_band[mask] = 0
+        else:
+            y = xa * radiance
+            y -= xb
+            mask = radiance == 0
+            y[mask] = np.nan
+            denom = xc * y
+            denom += 1.0
+            refl_band = y / denom
+            mask |= refl_band < 0
+            refl_band[mask] = 0
         reflectance[i] = refl_band
 
     # Perform adjecency correction if required
     if adjCorr:
-        logger.info('Performing adjacency correction')
-        for b in tqdm.trange(nbands, desc='adjcorr', unit='band'):
-            reflectance[:, :, b] = adjacency_correction(
-                    reflectance[:, :, b],
+        logger.info('Adjacency correction')
+        for i in tqdm.trange(nbands, desc='adjcorr', unit='band'):
+            reflectance[i] = adjacency_correction(
+                    reflectance[i],
                     pixel_size,
                     mysixs,
                     radius)
