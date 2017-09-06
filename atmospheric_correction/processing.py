@@ -1,9 +1,7 @@
-import os
 import copy
 import logging
 
 import numpy as np
-import gdal_utils.gdal_binaries as gbin
 import dateutil
 import rasterio
 
@@ -30,7 +28,7 @@ def main(
         dnFile=None, data=None, profile=None,
         tileSizePixels=0,
         isPan=False, adjCorr=True, use_modis=False,
-        aotMultiplier=1.0, roiFile=None, nprocs=None,
+        aotMultiplier=1.0, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None,
         outfile=None):
     """Main workflow function for atmospheric correction
@@ -68,8 +66,6 @@ def main(
     aotMultiplier : float
         Atmospheric Optical Depth
         scale factor
-    roiFile : str, optional
-        path to ROI file to clip the image with
     nprocs : int
         number of processors to use
         default: all available
@@ -110,14 +106,6 @@ def main(
         date = dateutil.parser.parse(date)
 
     if data is None:
-        if roiFile is not None:
-            logger.info('Clipping image to ROI ...')
-            dnFile_clipped = '{}_clipped{}'.format(*os.path.splitext(dnFile))
-            gbin.cutline(dnFile, inshp=roiFile, outfile=dnFile_clipped)
-            dnFile = dnFile_clipped
-            logger.info('Done clipping.')
-
-        # load data
         with rasterio.open(dnFile) as src:
             data = src.read()
             profile = src.profile.copy()

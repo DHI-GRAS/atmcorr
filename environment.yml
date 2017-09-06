@@ -3,7 +3,7 @@ channels:
     - conda-forge
 dependencies:
     - python=2
-    - gdal
+    - rasterio
     - numpy
     - numexpr
     - scipy
@@ -13,5 +13,4 @@ dependencies:
     - ruamel.yaml
     - Py6S
     - pip:
-        - https://github.com/DHI-GRAS/gdal_utils/archive/master.zip
         - https://github.com/DHI-GRAS/yamlconfig/archive/master.zip
