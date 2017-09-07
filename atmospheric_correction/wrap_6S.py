@@ -160,7 +160,7 @@ def get_correction_params(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, isPan, bandids=band_ids)
+    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, band_ids=band_ids)
     start_wv /= 1000.0
     end_wv /= 1000.0
 
