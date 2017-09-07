@@ -49,7 +49,7 @@ def main(
     dnFile : str, optional
         path to digital numbers input file
         instead, you can also provide the data
-    data : ndarray, optional
+    data : ndarray, optional shape(nbands, ny, nx)
         digital numbers input data
         can be used instead of dnFile
     profile : dict, optional
@@ -85,6 +85,12 @@ def main(
     """
     if data is not None and profile is None:
         raise ValueError('Data and profile must be provided together.')
+
+    if data is not None and data.shape[0] != profile['count']:
+        raise ValueError(
+                'Data array must have bands as its first dimension.'
+                'Number of bands was {} but data has shape {}.'
+                ''.format(profile['count'], data.shape))
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
@@ -202,7 +208,6 @@ def main(
                     break
 
         if tileSizePixels > 0 or not adjCorr:
-            logger.info('Perform atm correction')
             data = wrap_6S.perform_correction(
                     data, correctionParams, pixel_size=res, adjCorr=False)
 

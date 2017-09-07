@@ -171,7 +171,6 @@ def get_correction_params(
                 band, start_wv, end_wv, 0.0025)
 
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
-    logger.info(geometry_dict)
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)

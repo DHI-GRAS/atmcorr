@@ -14,7 +14,7 @@ setup(
     """,
     install_requires=[
         'tqdm',
-        'rasterio>=1.09b',
+        'rasterio',
         'numpy>=1.11.1',
         'scipy>=0.17.1',
         'sensor_response_curves>=0.2'],
