@@ -144,7 +144,7 @@ def get_correction_params(
         bands in input data
         0-based index wrt. original product
     isPan : bool
-        is Pan?
+        who is Pan?
     mtdFile_tile : str
         path to tile metadata file
         required for Sentinel 2
@@ -160,7 +160,8 @@ def get_correction_params(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, band_ids=band_ids)
+    start_wv, end_wv, rcurves = srcurves.get_response_curves(
+            sensor, band_ids=band_ids, pan_only=isPan)
     start_wv /= 1000.0
     end_wv /= 1000.0
 
