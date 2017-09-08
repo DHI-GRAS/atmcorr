@@ -44,8 +44,8 @@ def main(
         6S, RAD, DOS, TOA (same as DOS)
     atm : dict
         atmospheric parameters
-    aeroProfile : dict
-        TODO: what is this?
+    aeroProfile : str
+        aero profile name
     dnFile : str, optional
         path to digital numbers input file
         instead, you can also provide the data
@@ -136,6 +136,8 @@ def main(
 
         logger.info('Computing TOA radiance ...')
         data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+        if not np.any(data):
+            raise RuntimeError('Data is all zeros.')
 
         if tileSizePixels > 0:
             tileExtents = io_utils.getTileExtents(
