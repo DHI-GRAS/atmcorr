@@ -55,8 +55,9 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
     effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
     scalefactor = abscalfactor / effectivebw * (2 - gain) - bias
-
+    # get bands
     scalefactor = [scalefactor[i] for i in band_ids]
+    logger.debug('scale factor is %s', scalefactor)
 
     nbands = data.shape[0]
 
@@ -65,6 +66,7 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
         logger.info("DOS correction")
         dosDN = dos.do_dos(data)
         logger.info('Done.')
+        logger.debug('dosDN is %s', dosDN)
     else:
         dosDN = np.zeros(nbands)
 
@@ -73,16 +75,9 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     radiance = np.zeros(data.shape)
     for i in range(nbands):
         rawdata = data[i]
-        mask = (rawdata - dosDN[i]) > 0
-        mask &= rawdata < 65536
-
-        radiance_band = rawdata - dosDN[i]
-        radiance[i, mask] = radiance_band[mask]
-        radiance[i, :, :] *= scalefactor[i]
-
-    # Mark the pixels which have all radiances of 0 as invalid
-    mask = np.sum(radiance, axis=0) > 0
-    radiance[:, ~mask] = 0
+        good = rawdata > dosDN[i]
+        good &= rawdata < 65536
+        radiance[i, good] = (rawdata[good] - dosDN[i]) * scalefactor[i]
 
     logger.info('Done with radiometric correction.')
     return radiance
