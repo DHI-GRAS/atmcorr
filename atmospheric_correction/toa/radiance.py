@@ -81,7 +81,7 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
         radiance[i, :, :] *= scalefactor[i]
 
     # Mark the pixels which have all radiances of 0 as invalid
-    mask = np.sum(radiance, axis=2) > 0
+    mask = np.sum(radiance, axis=0) > 0
     radiance[:, ~mask] = 0
 
     logger.info('Done with radiometric correction.')
