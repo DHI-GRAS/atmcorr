@@ -167,9 +167,9 @@ def get_correction_params(
 
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
-    for i, band in enumerate(rcurves):
+    for i in range(len(rcurves)):
         rcurves[i] = srcurves.resample_response_curves(
-                band, start_wv, end_wv, 0.0025)
+                rcurves[i], start_wv, end_wv, 0.0025)
 
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
@@ -212,23 +212,32 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
     ----------
     data : ndarray shape(nbands, ny, nx)
         input data
-    corrparams : hard to explain
-        correction parameters
+    corrparams : record array shape=(nbands, nj, ni) fields=['xa', 'xb', 'xc']
+        correction parameters (can be tiled)
+        nj, ni are the tile indices
     pixel_size : int
         pixel size
     radius : int
         radius
     adjCorr : bool
         do adjacency correct
-    mysixs : SixS instance
+    mysixs : SixS instance, optional
         SixS model
+        required for adjCorr
     """
     if adjCorr and mysixs is None:
-        raise ValueError('adjCorr requires sixs instance')
+        raise ValueError('adjCorr requires 6S instance')
 
     reflectance = np.zeros(data.shape, dtype='f4')
 
-    nbands = data.shape[0]
+    nbands, nj, ni = corrparams.shape
+    ntiles = nj * ni
+
+    if not nbands == data.shape[0]:
+        raise ValueError(
+                'First dimension of corrparams should correspond to '
+                'first (band) dimension of data.')
+
     for i in tqdm.trange(nbands, desc='Atmospheric correction', unit='band'):
         corrparams_band = corrparams[i]
         # Read uncorrected radiometric data and correct
@@ -236,9 +245,16 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
-        xa = utils.imresize(corrparams_band['xa'], radiance.shape)
-        xb = utils.imresize(corrparams_band['xb'], radiance.shape)
-        xc = utils.imresize(corrparams_band['xc'], radiance.shape)
+        if ntiles == 1:
+            # take single value
+            xa = corrparams_band['xa'][0, 0]
+            xb = corrparams_band['xb'][0, 0]
+            xc = corrparams_band['xc'][0, 0]
+        else:
+            # interpolate
+            xa = utils.imresize(corrparams_band['xa'], radiance.shape)
+            xb = utils.imresize(corrparams_band['xb'], radiance.shape)
+            xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
         if ne is not None:

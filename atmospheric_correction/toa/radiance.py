@@ -53,11 +53,14 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     """Compute TOA radiance for WV"""
 
     gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
+    logger.debug('gain: %s, bias: %s', gain, bias)
     effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
-    scalefactor = abscalfactor / effectivebw * (2 - gain) - bias
+    scalefactor = abscalfactor / effectivebw * (2 - gain)
     # get bands
-    scalefactor = [scalefactor[i] for i in band_ids]
-    logger.debug('scale factor is %s', scalefactor)
+    bias_bands = bias[band_ids]
+    scalefactor_bands = scalefactor[band_ids]
+    logger.debug('scale factors are %s', scalefactor_bands)
+    logger.debug('bias is %s', bias_bands)
 
     nbands = data.shape[0]
 
@@ -77,7 +80,7 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
         rawdata = data[i]
         good = rawdata > dosDN[i]
         good &= rawdata < 65536
-        radiance[i, good] = (rawdata[good] - dosDN[i]) * scalefactor[i]
+        radiance[i, good] = (rawdata[good] - dosDN[i]) * scalefactor_bands[i] - bias_bands[i]
 
     logger.info('Done with radiometric correction.')
     return radiance

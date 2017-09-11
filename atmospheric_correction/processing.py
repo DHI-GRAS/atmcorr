@@ -30,7 +30,7 @@ def main(
         isPan=False, adjCorr=True, use_modis=False,
         aotMultiplier=1.0, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None,
-        outfile=None):
+        outfile=None, return_profile=False):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -82,6 +82,19 @@ def main(
         if not specified
     outfile : str
         path to output file
+    return_profile : bool
+        when returning data,
+        also return profile
+
+    Returns
+    -------
+    None
+        if outfile is specified
+    data
+        if not return_profile
+    data, profile
+        if return_profile
+        where profile is the rasterio file profile
     """
     if data is not None and profile is None:
         raise ValueError('Data and profile must be provided together.')
@@ -155,17 +168,20 @@ def main(
             raise NotImplementedError()
             # modisAtmDir = modis_atm.get_atm(extent, date)
 
-        # Structure holding the 6S correction parameters has for each band in
-        # the image a dictionary with arrays of values (one for each tile)
+        # Structure holding the 6S correction parameters has, for each band in
+        # the image, arrays of values (one for each tile)
         # of the three correction parameters
         nrows, ncols = tileExtents.shape[:2]
-        _empty = np.zeros(
-                (nrows, ncols),
-                dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f8'] * 3)))
-        correctionParams = [_empty.copy() for _ in range(nbands)]
+        correctionParams = np.zeros(
+                (nbands, nrows, ncols),
+                dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+
+        nruns = nrows * ncols
+        if nruns > 1 and adjCorr:
+            raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
 
         # Get 6S correction parameters for an extent of each tile
-        nruns = nrows * ncols
+        mysixs = None
         for j in range(nrows):
             for i in range(ncols):
                 extent = tileExtents[j, i]
@@ -181,9 +197,9 @@ def main(
                             atm[key] = atm_modis[key]
 
                 atm['AOT'] *= aotMultiplier
-                logger.debug("AOT: %s", atm['AOT'])
-                logger.debug("Water Vapour: %s", atm['PWV'])
-                logger.debug("Ozone: %s", atm['ozone'])
+                logger.debug('AOT: %s', atm['AOT'])
+                logger.debug('Water Vapour: %s', atm['PWV'])
+                logger.debug('Ozone: %s', atm['ozone'])
 
                 mysixs, tilecp = wrap_6S.get_correction_params(
                         sensor=sensor,
@@ -198,23 +214,18 @@ def main(
 
                 nbands = len(tilecp)
                 for b in range(nbands):
-                    correctionParams[b][j, i]['xa'] = tilecp[b]['xa']
-                    correctionParams[b][j, i]['xb'] = tilecp[b]['xb']
-                    correctionParams[b][j, i]['xc'] = tilecp[b]['xc']
+                    correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
+                    correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
+                    correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
 
-                if tileSizePixels == 0 and adjCorr:
-                    if nruns != 1:
-                        raise RuntimeError('Should be only one run with tileSizePixels=0')
-                    data = wrap_6S.perform_correction(
-                            data, correctionParams, adjCorr=True, mysixs=mysixs)
-                    break
+        logger.debug('Correction parameters: %s', np.squeeze(correctionParams))
 
-        if tileSizePixels > 0 or not adjCorr:
-            data = wrap_6S.perform_correction(
-                    data, correctionParams, pixel_size=res, adjCorr=False)
+        data = wrap_6S.perform_correction(
+                data, correctionParams, pixel_size=res, adjCorr=adjCorr,
+                mysixs=mysixs)
 
-    elif method in ["DOS", "TOA"]:
-        if method == "DOS":
+    elif method in ['DOS', 'TOA']:
+        if method == 'DOS':
             doDOS = True
         else:
             doDOS = False
@@ -226,16 +237,19 @@ def main(
             data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             data = toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
 
-    elif method == "RAD":
+    elif method == 'RAD':
         doDOS = False
         data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
 
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
+    profile['dtype'] = 'float32'
     if outfile is not None:
-        profile['dtype'] = 'float32'
         with rasterio.open(outfile, 'w', **profile) as dst:
             dst.write(data)
     else:
-        return data
+        if return_profile:
+            return data, profile
+        else:
+            return data
