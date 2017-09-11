@@ -92,9 +92,11 @@ def main(
         if outfile is specified
     data
         if not return_profile
+        nodata are masked as NaN
     data, profile
         if return_profile
         where profile is the rasterio file profile
+        and data as above
     """
     if data is not None and profile is None:
         raise ValueError('Data and profile must be provided together.')
@@ -135,7 +137,14 @@ def main(
                 'Number of band IDs {} does not correspond to number of bands {}.',
                 ''.format(len(band_ids), nbands))
 
-    # keep unchanged copy
+    nodata = profile['nodata']
+    if nodata is not None:
+        if nodata not in [0, 65536]:
+            logger.info('Denoting nodata as zero')
+            data[data == nodata] = 0
+            profile['nodata'] = 0
+
+    # keep unchanged copy of atm dict
     if atm is not None:
         atm_original = copy.deepcopy(atm)
         atm = None
@@ -245,6 +254,7 @@ def main(
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
     profile['dtype'] = 'float32'
+    profile['nodata'] = np.nan
     if outfile is not None:
         with rasterio.open(outfile, 'w', **profile) as dst:
             dst.write(data)

@@ -53,34 +53,31 @@ def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
     """Compute TOA radiance for WV"""
 
     gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
-    logger.debug('gain: %s, bias: %s', gain, bias)
     effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
     scalefactor = abscalfactor / effectivebw * (2 - gain)
-    # get bands
     bias_bands = bias[band_ids]
     scalefactor_bands = scalefactor[band_ids]
-    logger.debug('scale factors are %s', scalefactor_bands)
-    logger.debug('bias is %s', bias_bands)
 
     nbands = data.shape[0]
 
     # perform dark object substraction
     if doDOS:
-        logger.info("DOS correction")
+        logger.info('DOS correction')
         dosDN = dos.do_dos(data)
         logger.info('Done.')
-        logger.debug('dosDN is %s', dosDN)
     else:
         dosDN = np.zeros(nbands)
 
     # apply the radiometric correction factors to input image
     logger.info('Radiometric correction')
-    radiance = np.zeros(data.shape)
+    radiance = np.zeros(data.shape, dtype='f4')
     for i in range(nbands):
         rawdata = data[i]
         good = rawdata > dosDN[i]
         good &= rawdata < 65536
-        radiance[i, good] = (rawdata[good] - dosDN[i]) * scalefactor_bands[i] - bias_bands[i]
+        gooddata = (rawdata[good] - dosDN[i]) * scalefactor_bands[i] - bias_bands[i]
+        gooddata[gooddata < 0] = 0
+        radiance[i, good] = gooddata
 
     logger.info('Done with radiometric correction.')
     return radiance
@@ -186,7 +183,7 @@ def toa_radiance_S2(data, mtdFile, mtdFile_tile, band_ids):
     # Convert to radiance
     logger.info('Radiometric correction')
     factor = irradiance * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
-    radiance = data.astype(float)
+    radiance = data.astype('f4')
     for i in range(data.shape[0]):
         radiance[i] /= rc
         radiance[i] *= factor[i]

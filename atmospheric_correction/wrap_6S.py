@@ -17,6 +17,7 @@ import sensor_response_curves as srcurves
 
 from atmospheric_correction import viewing_geometry as vg
 from atmospheric_correction import utils
+from atmospheric_correction import exception_handling
 
 logger = logging.getLogger(__name__)
 
@@ -228,8 +229,6 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
     if adjCorr and mysixs is None:
         raise ValueError('adjCorr requires 6S instance')
 
-    reflectance = np.zeros(data.shape, dtype='f4')
-
     nbands, nj, ni = corrparams.shape
     ntiles = nj * ni
 
@@ -237,6 +236,8 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
         raise ValueError(
                 'First dimension of corrparams should correspond to '
                 'first (band) dimension of data.')
+
+    reflectance = np.full(data.shape, np.nan, dtype='f4')
 
     for i in tqdm.trange(nbands, desc='Atmospheric correction', unit='band'):
         corrparams_band = corrparams[i]
@@ -257,23 +258,23 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
             xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
-        if ne is not None:
-            y = ne.evaluate('xa * radiance - xb')
-            mask = radiance == 0
-            y[mask] = np.nan
-            refl_band = ne.evaluate('y / (1.0 + xc * y)')
-            mask |= ne.evaluate('refl_band < 0')
-            refl_band[mask] = 0
-        else:
-            y = xa * radiance
-            y -= xb
-            mask = radiance == 0
-            y[mask] = np.nan
-            denom = xc * y
-            denom += 1.0
-            refl_band = y / denom
-            mask |= refl_band < 0
-            refl_band[mask] = 0
+        with exception_handling.ignore_nan_warnings():
+            if ne is not None:
+                y = ne.evaluate('xa * radiance - xb')
+                mask = radiance == 0
+                y[mask] = np.nan
+                refl_band = ne.evaluate('y / (1.0 + xc * y)')
+                mask = ne.evaluate('refl_band < 0')
+                refl_band[mask] = 0
+            else:
+                y = xa * radiance
+                y -= xb
+                mask = radiance == 0
+                y[mask] = np.nan
+                denom = xc * y
+                denom += 1.0
+                refl_band = y / denom
+                refl_band[refl_band < 0] = 0
         reflectance[i] = refl_band
 
     # Perform adjecency correction if required
