@@ -6,7 +6,7 @@ import numpy as np
 import dateutil
 import rasterio
 
-import modis_atm.params
+#import modis_atm.params
 
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
@@ -145,7 +145,7 @@ def main(
     if data is None:
         with rasterio.open(dnFile) as src:
             data = src.read()
-            profile = src.profile.copy()
+            profile = copy.copy(src.profile)
 
     nbands = profile['count']
     if len(band_ids) != nbands:
@@ -203,7 +203,7 @@ def main(
             for i in range(ncols):
                 extent = tileExtents[j, i]
                 logger.debug('tile %d,%d extent is %s', j, i, extent)
-                atm = atm_original.copy()
+                atm = copy.copy(atm_original)
                 # If MODIS atmospheric data was downloaded then use it to set
                 # different atmospheric parameters for each tile
                 if use_modis:
@@ -213,7 +213,7 @@ def main(
                             extent=extent,
                             credentials=earthdata_credentials,
                             download_dir=modis_atm_dir)
-                    atm = atm_original.copy()
+                    atm = copy.copy(atm_original)
                     for key in atm_modis:
                         if key not in atm or atm[key] is None:
                             atm[key] = atm_modis[key]
