@@ -1,9 +1,12 @@
+import os
 import copy
 import logging
 
 import numpy as np
 import dateutil
 import rasterio
+
+import modis_atm.params
 
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
@@ -13,9 +16,9 @@ from atmospheric_correction.toa.reflectance import toa_reflectance
 import atmospheric_correction.metadata.bands as meta_bands
 import atmospheric_correction.metadata.dates as meta_dates
 
-# import modis_atm
-
 logger = logging.getLogger(__name__)
+
+MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
 
 
 def main_optdict(options):
@@ -27,10 +30,12 @@ def main(
         atm, aeroProfile,
         dnFile=None, data=None, profile=None,
         tileSizePixels=0,
-        isPan=False, adjCorr=True, use_modis=False,
+        isPan=False, adjCorr=True,
         aotMultiplier=1.0, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None,
-        outfile=None, return_profile=False):
+        outfile=None, return_profile=False,
+        use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
+        earthdata_credentials={}):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -58,11 +63,9 @@ def main(
     tileSizePixels : int
         tile size in pixels
     isPan : bool
-        TODO: Who is Pan?
+        use Pan band only
     adjCorr : bool
         perform adjacency correction
-    use_modis : bool
-        download atm parameters from MODIS
     aotMultiplier : float
         Atmospheric Optical Depth
         scale factor
@@ -85,6 +88,14 @@ def main(
     return_profile : bool
         when returning data,
         also return profile
+    use_modis : bool
+        download atm parameters from MODIS
+    modis_atm_dir : str
+        path where to store / cache modis
+        files for re-use
+    earthdata_credentials : dict
+        username, password
+        required for use_modis
 
     Returns
     -------
@@ -106,6 +117,11 @@ def main(
                 'Data array must have bands as its first dimension.'
                 'Number of bands was {} but data has shape {}.'
                 ''.format(profile['count'], data.shape))
+
+    if use_modis and not earthdata_credentials:
+        raise ValueError(
+                'In order to download MODIS parameters, you need to'
+                'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
@@ -140,7 +156,6 @@ def main(
     nodata = profile['nodata']
     if nodata is not None:
         if nodata not in [0, 65536]:
-            logger.info('Denoting nodata as zero')
             data[data == nodata] = 0
             profile['nodata'] = 0
 
@@ -170,13 +185,6 @@ def main(
         else:
             tileExtents = np.array([[None]])
 
-        # If atmospheric parameters needed by 6S are not specified then
-        # donwload and use MODIS atmopsheric products
-        if use_modis:
-            logger.info('Retrieving MODIS atmospheric parameters ...')
-            raise NotImplementedError()
-            # modisAtmDir = modis_atm.get_atm(extent, date)
-
         # Structure holding the 6S correction parameters has, for each band in
         # the image, arrays of values (one for each tile)
         # of the three correction parameters
@@ -194,12 +202,17 @@ def main(
         for j in range(nrows):
             for i in range(ncols):
                 extent = tileExtents[j, i]
+                logger.debug('tile %d,%d extent is %s', j, i, extent)
                 atm = atm_original.copy()
                 # If MODIS atmospheric data was downloaded then use it to set
                 # different atmospheric parameters for each tile
                 if use_modis:
                     raise NotImplementedError()
-                    atm_modis = None  # modis_atm.get_atm(date, extent)
+                    atm_modis = modis_atm.params.retrieve_parameters(
+                            date=date,
+                            extent=extent,
+                            credentials=earthdata_credentials,
+                            download_dir=modis_atm_dir)
                     atm = atm_original.copy()
                     for key in atm_modis:
                         if key not in atm or atm[key] is None:

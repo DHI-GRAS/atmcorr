@@ -14,6 +14,7 @@ from Py6S import Wavelength
 from Py6S import Geometry
 
 import sensor_response_curves as srcurves
+import sensor_response_curves.resample as srcresample
 
 from atmospheric_correction import viewing_geometry as vg
 from atmospheric_correction import utils
@@ -161,16 +162,16 @@ def get_correction_params(
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    start_wv, end_wv, rcurves = srcurves.get_response_curves(
+    wavelength, rcurves = srcurves.get_response_curves(
             sensor, band_ids=band_ids, pan_only=isPan)
-    start_wv /= 1000.0
-    end_wv /= 1000.0
+    wavelength /= 1e3
+    start_wv = wavelength[0]
+    end_wv = wavelength[1]
 
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
-    for i in range(len(rcurves)):
-        rcurves[i] = srcurves.resample_response_curves(
-                rcurves[i], start_wv, end_wv, 0.0025)
+    wavelength, rcurves = srcresample.resample_response_curves(
+                wavelength, rcurves, resolution=0.0025)
 
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
