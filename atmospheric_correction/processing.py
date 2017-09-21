@@ -6,8 +6,6 @@ import numpy as np
 import dateutil
 import rasterio
 
-import modis_atm.params
-
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
 from atmospheric_correction import io_utils
@@ -15,6 +13,12 @@ from atmospheric_correction.toa.radiance import toa_radiance
 from atmospheric_correction.toa.reflectance import toa_reflectance
 import atmospheric_correction.metadata.bands as meta_bands
 import atmospheric_correction.metadata.dates as meta_dates
+
+try:
+    import modis_atm.params
+    HAS_MODIS = True
+except ImportError:
+    HAS_MODIS = False
 
 logger = logging.getLogger(__name__)
 
@@ -118,10 +122,15 @@ def main(
                 'Number of bands was {} but data has shape {}.'
                 ''.format(profile['count'], data.shape))
 
-    if use_modis and not earthdata_credentials:
-        raise ValueError(
-                'In order to download MODIS parameters, you need to'
-                'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
+    if use_modis:
+        if not HAS_MODIS:
+            raise ValueError(
+                    'To download MODIS parameters, you need to '
+                    'install the `modis_atm` package.')
+        if not earthdata_credentials:
+            raise ValueError(
+                    'To download MODIS parameters, you need to '
+                    'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
