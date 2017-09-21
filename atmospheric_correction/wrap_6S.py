@@ -164,7 +164,7 @@ def get_correction_params(
     # Set 6S band filters
     wavelength, rcurves = srcurves.get_response_curves(
             sensor, band_ids=band_ids, pan_only=isPan)
-    wavelength /= 1e3
+    wavelength = wavelength.astype("float") / 1e3
     start_wv = wavelength[0]
     end_wv = wavelength[1]
 
