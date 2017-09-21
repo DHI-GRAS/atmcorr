@@ -166,7 +166,7 @@ def get_correction_params(
             sensor, band_ids=band_ids, pan_only=isPan)
     wavelength = wavelength.astype("float") / 1e3
     start_wv = wavelength[0]
-    end_wv = wavelength[1]
+    end_wv = wavelength[-1]
 
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
