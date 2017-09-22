@@ -1,5 +1,4 @@
 from __future__ import division
-import os
 import logging
 import multiprocessing
 
@@ -29,8 +28,6 @@ except ImportError:
     ne = None
     logger.debug('Not using numexpr.')
 
-
-PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 
 _geometry_attrs_to_keys = {
         'solar_z': 'sun_zenith',
@@ -73,7 +70,7 @@ def setup_sixs(
     start_wv, end_wv : float
         wave length range
     """
-    mysixs = SixS(PATH_6S)
+    mysixs = SixS()
 
     # Set 6S BRDF model to 1 m/mysixs wind ocean with typical salinity and pigment concentration
     # mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
