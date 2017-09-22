@@ -13,13 +13,22 @@ from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
 
-import gdal_utils.gdal_utils as gu
 import sensor_response_curves as srcurves
+import sensor_response_curves.resample as srcresample
 
 from atmospheric_correction import viewing_geometry as vg
 from atmospheric_correction import utils
+from atmospheric_correction import exception_handling
 
 logger = logging.getLogger(__name__)
+
+try:
+    import numexpr as ne
+    logger.debug('Using numexpr.')
+except ImportError:
+    ne = None
+    logger.debug('Not using numexpr.')
+
 
 PATH_6S = os.path.join(os.path.dirname(__file__), 'dependency', "sixsV1.1")
 
@@ -123,20 +132,46 @@ def get_correction_params(
         aeroProfile="Continental",
         extent=None,
         nprocs=None):
+    """Get correction parameters
 
+    Parameters
+    ----------
+    sensor : str
+        sensor name
+    mtdFile : str
+        path to metadata file
+    atm : dict
+        atmospheric parameters
+    band_ids : list of int
+        bands in input data
+        0-based index wrt. original product
+    isPan : bool
+        who is Pan?
+    mtdFile_tile : str
+        path to tile metadata file
+        required for Sentinel 2
+    aeroProfile : str
+        aero profile for 6S
+    extent : list of float
+        image extent
+    nprocs : int
+        number of processors to use
+    """
+    logger.info('Getting correction parameters.')
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
-    start_wv, end_wv, rcurves = srcurves.get_response_curves(sensor, isPan, bandids=band_ids)
-    start_wv /= 1000.0
-    end_wv /= 1000.0
+    wavelength, rcurves = srcurves.get_response_curves(
+            sensor, band_ids=band_ids, pan_only=isPan)
+    wavelength = wavelength.astype("float") / 1e3
+    start_wv = wavelength[0]
+    end_wv = wavelength[-1]
 
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
-    for i, band in enumerate(rcurves):
-        rcurves[i] = srcurves.resample_response_curves(
-                band, start_wv, end_wv, 0.0025)
+    wavelength, rcurves = srcresample.resample_response_curves(
+                wavelength, rcurves, resolution=0.0025)
 
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
@@ -161,62 +196,101 @@ def get_correction_params(
     mysixs = None
     for res in tqdm.tqdm(
             pool.imap(run_sixs, jobs),
-            desc='Atmospheric Correction 6S',
-            unit='job',
+            desc='Getting correction parameters',
+            unit='band',
             total=len(jobs)):
         output.append(res[0])
         mysixs = res[1]
     pool.close()
     pool.join()
+    logger.info('Got correction parameters.')
     return mysixs, output
 
 
-def perform_correction(img, corrparams, radius=1, adjCorr=False, mysixs=None):
-    if adjCorr and mysixs is None:
-        raise ValueError('adjCorr requires sixs instance')
-    outshape = (img.RasterYSize, img.RasterXSize, img.RasterCount)
-    reflectance = np.zeros(outshape, dtype='float32')
-    # assume same horizontal and vertical resolution
-    pixelSize = img.GetGeoTransform()[1]
+def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, mysixs=None):
+    """Perform atmospheric correction
 
-    nbands = len(corrparams)
-    for b in tqdm.trange(nbands, desc='atmcorr', unit='band'):
-        corrparams_band = corrparams[b]
+    Parameters
+    ----------
+    data : ndarray shape(nbands, ny, nx)
+        input data
+    corrparams : record array shape=(nbands, nj, ni) fields=['xa', 'xb', 'xc']
+        correction parameters (can be tiled)
+        nj, ni are the tile indices
+    pixel_size : int
+        pixel size
+    radius : int
+        radius
+    adjCorr : bool
+        do adjacency correct
+    mysixs : SixS instance, optional
+        SixS model
+        required for adjCorr
+    """
+    if adjCorr and mysixs is None:
+        raise ValueError('adjCorr requires 6S instance')
+
+    nbands, nj, ni = corrparams.shape
+    ntiles = nj * ni
+
+    if not nbands == data.shape[0]:
+        raise ValueError(
+                'First dimension of corrparams should correspond to '
+                'first (band) dimension of data.')
+
+    reflectance = np.full(data.shape, np.nan, dtype='f4')
+
+    for i in tqdm.trange(nbands, desc='Atmospheric correction', unit='band'):
+        corrparams_band = corrparams[i]
         # Read uncorrected radiometric data and correct
-        radiance = img.GetRasterBand(b + 1).ReadAsArray()
+        radiance = data[i]
 
         # Interpolate the 6S correction parameters from one per image tile to
         # one per image pixel
-        xa = utils.imresize(corrparams_band['xa'], radiance.shape)
-        xb = utils.imresize(corrparams_band['xb'], radiance.shape)
-        xc = utils.imresize(corrparams_band['xc'], radiance.shape)
+        if ntiles == 1:
+            # take single value
+            xa = corrparams_band['xa'][0, 0]
+            xb = corrparams_band['xb'][0, 0]
+            xc = corrparams_band['xc'][0, 0]
+        else:
+            # interpolate
+            xa = utils.imresize(corrparams_band['xa'], radiance.shape)
+            xb = utils.imresize(corrparams_band['xb'], radiance.shape)
+            xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
-        y = xa * radiance - xb
-        mask = radiance == 0
-        y[mask] = np.nan
-        refl_band = y / (1.0 + xc * y)
-        refl_band = np.maximum(refl_band, 0.0)
-        refl_band[mask] = 0.0
-        reflectance[:, :, b] = refl_band
+        with exception_handling.ignore_nan_warnings():
+            if ne is not None:
+                y = ne.evaluate('xa * radiance - xb')
+                mask = radiance == 0
+                y[mask] = np.nan
+                refl_band = ne.evaluate('y / (1.0 + xc * y)')
+                mask = ne.evaluate('refl_band < 0')
+                refl_band[mask] = 0
+            else:
+                y = xa * radiance
+                y -= xb
+                mask = radiance == 0
+                y[mask] = np.nan
+                denom = xc * y
+                denom += 1.0
+                refl_band = y / denom
+                refl_band[refl_band < 0] = 0
+        reflectance[i] = refl_band
 
     # Perform adjecency correction if required
     if adjCorr:
-        logger.info('Performing adjacency correction')
-        for b in tqdm.trange(nbands, desc='adjcorr', unit='band'):
-            reflectance[:, :, b] = adjacency_correction(
-                    reflectance[:, :, b],
-                    pixelSize,
+        logger.info('Adjacency correction')
+        for i in tqdm.trange(nbands, desc='adjcorr', unit='band'):
+            reflectance[i] = adjacency_correction(
+                    reflectance[i],
+                    pixel_size,
                     mysixs,
                     radius)
-
-    return gu.array_to_gtiff(
-            reflectance, "MEM",
-            img.GetProjection(), img.GetGeoTransform(),
-            banddim=2)
+    return reflectance
 
 
-def adjacency_correction(refl, pixelSize, mysixs, radius=1.0):
+def adjacency_correction(refl, pixel_size, mysixs, radius=1.0):
     """Adjacency correction
 
     Sources
@@ -244,7 +318,7 @@ def adjacency_correction(refl, pixelSize, mysixs, radius=1.0):
     # The adjacency effect can come from pixels within 1km
     # of the central pixel (Verhoef et al., 2003) so
     # sigma should be half of that in gaussian filter
-    sigma = radius / pixelSize
+    sigma = radius / pixel_size
     adjRefl = scipy.ndimage.filters.gaussian_filter(refl, sigma)
 
     # eq (8)

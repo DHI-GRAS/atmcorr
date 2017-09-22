@@ -8,24 +8,23 @@ logger = logging.getLogger(__name__)
 @click.command()
 @yamlconfig.click_option.yaml_config_option(
         keys=[
-            'sensor', 'dnFile', 'mtdFile', 'roiFile',
+            'sensor', 'dnFile', 'mtdFile',
             'method', 'atm', 'aeroProfile', 'tileSizePixels',
             'outfile',
             ('isPan', False),
             ('adjCorr', False),
             ('mtdFile_tile', None),
             ('nprocs', None),
-            ('band_ids', None)],
+            ('band_ids', None),
+            ('use_modis', False),
+            ('earthdata_credentials', {})],
         allow_missing=False,
         parse_kwargs=dict(
             join_rootdir=True),
         help='Atmospheric correction config file')
-def cli(outfile, **config):
+def cli(**config):
     """Run atmospheric correction"""
     from atmospheric_correction.logs import set_cli_logger
     set_cli_logger(level='INFO')
     from atmospheric_correction.processing import main
-    from gdal_utils import gdal_utils as gu
-    img = main(**config)
-    logger.info('Saving to %s', outfile)
-    gu.dump_gtiff(img, outfile)
+    main(**config)
