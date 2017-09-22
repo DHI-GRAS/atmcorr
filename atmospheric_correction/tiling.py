@@ -4,23 +4,23 @@ import numpy as np
 import pyproj
 
 
-def get_tile_corners(height, width, tilesize):
+def get_tile_corners_ij(height, width, xtilesize, ytilesize):
     """Tile image with width and height into windows of size tilesize
 
     Paramters
     ---------
     height, width : int
         image dimensions
-    tilesize : int
-        symmetric tile size
+    xtilesize, ytilesize : int
+        tile sizes
 
     Returns
     -------
     ndarray shape(ny, nx) of rasterio.windows.Window
         windows
     """
-    nx = int(width / tilesize + 0.5)
-    ny = int(height / tilesize + 0.5)
+    nx = int(width / xtilesize + 0.5)
+    ny = int(height / ytilesize + 0.5)
 
     jj = np.arange(ny)
     ii = np.arange(nx)
@@ -30,10 +30,10 @@ def get_tile_corners(height, width, tilesize):
     # tile grid dims, 4 corners, (x, y)
     corners = np.zeros((2, 4, ny, nx))
 
-    bottom = jmesh * tilesize
-    left = imesh * tilesize
-    top = np.minimum((bottom + tilesize - 1), ny)
-    right = np.minimum((left + tilesize - 1), nx)
+    bottom = jmesh * ytilesize
+    left = imesh * xtilesize
+    top = np.minimum((bottom + ytilesize - 1), ny)
+    right = np.minimum((left + xtilesize - 1), nx)
     # now create four corner points
     corners[:, 0, ...] = np.stack((left, bottom), axis=0)
     corners[:, 1, ...] = np.stack((left, top), axis=0)
@@ -83,31 +83,49 @@ def corners_to_extents(xs, ys):
         xmin, xmax, ymin, ymax
     """
     extent_rec = np.core.records.fromarrays(
-            [xs.min(axis=0), xs.max(axis=0), ys.min(axis=0), ys.max(axis=0)],
+            [np.min(xs, axis=0), np.max(xs, axis=0), np.min(ys, axis=0), np.max(ys, axis=0)],
             names=['xmin', 'xmax', 'ymin', 'ymax'])
     return extent_rec
 
 
-def get_tile_extents(height, width, tilesize, src_transform, src_crs):
-    """For an image of height, width get extents for tiles of size tilesize
+def get_tile_extents(height, width, src_transform, src_crs, xtilesize, ytilesize):
+    """For an image of height, width get extents for tiles of size xtilesize, ytilesize
 
     Parameters
     ----------
     height, width : int
         image shape
-    tilesize : int
-        symmetric tile size
     src_transform : affine.Affine
         image transform
     src_crs : dict or rasterio.crs.CRS
         source coordinate reference system
+    xtilesize, ytilesize : int
+        tile sizes
 
     Returns
     -------
     np.recarray shape(...)
         xmin, xmax, ymin, ymax
     """
-    corners = get_tile_corners(height, width, tilesize)
+    corners = get_tile_corners_ij(height, width, xtilesize, ytilesize)
     lon, lat = transform_corners(corners, src_transform, src_crs)
     extents_rec = corners_to_extents(lon, lat)
     return extents_rec
+
+
+def extents_from_bounds(left, bottom, right, top, src_crs, dst_crs={'init': 'epsg:4326'}):
+    """Get extents record array from bounds
+
+    Parameters
+    ----------
+    left, bottom, right, top : float
+        extents
+    src_crs, dst_crs : dict
+        source and destination coordinate reference systems
+    """
+    src_proj = pyproj.Proj(src_crs)
+    dst_proj = pyproj.Proj(dst_crs)
+    xs = [left, left, right, right]
+    ys = [bottom, top, top, bottom]
+    xout, yout = pyproj.transform(src_proj, dst_proj, xs, ys)
+    return corners_to_extents(xs, ys)

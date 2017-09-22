@@ -2,7 +2,9 @@ import re
 import datetime
 from xml.etree import ElementTree as ET
 
-from . import s2 as s2meta
+import dateutil.parser
+
+from atmospheric_correction.metadata import s2 as s2meta
 from atmospheric_correction.sensors import sensor_is
 
 
@@ -21,23 +23,15 @@ def get_date_l7l8(mtdFile):
 
 
 def get_date_wv(mtdFile):
-    firstLineTimeRegex = (
-            "\s*firstLineTime\s*=\s*(\d{4})[-_](\d{2})"
-            "[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;")
-    earliestAcqTimeRegex = (
-            "\s*earliestAcqTime\s*=\s*(\d{4})[-_](\d{2})"
-            "[-_](\d{2})T(\d{2}):(\d{2}):(.*)Z;")
-    with open(mtdFile, 'r') as metadata:
-        for line in metadata:
-            match = re.match(firstLineTimeRegex, line)
-            if match is None:
-                match = re.match(earliestAcqTimeRegex, line)
-            if match is None:
-                continue
-            year = int(match.group(1))
-            month = int(match.group(2))
-            day = int(match.group(3))
-            return datetime.date(year, month, day)
+    timekeys = ['firstLinetime', 'earliestAcqTime']
+    with open(mtdFile, 'r') as fin:
+        for line in fin:
+            linestrip = line.strip()
+            for timekey in timekeys:
+                if linestrip.startswith(timekey):
+                    datestr = linestrip.split('=')[1]
+                    datestr = datestr.strip().rstrip(';')
+                    return dateutil.parser.parse(datestr)
     raise ValueError('Unable to get date from file \'{}\''.format(mtdFile))
 
 

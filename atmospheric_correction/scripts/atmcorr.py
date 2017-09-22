@@ -15,7 +15,9 @@ logger = logging.getLogger(__name__)
             ('adjCorr', False),
             ('mtdFile_tile', None),
             ('nprocs', None),
-            ('band_ids', None)],
+            ('band_ids', None),
+            ('use_modis', False),
+            ('earthdata_credentials', {})],
         allow_missing=False,
         parse_kwargs=dict(
             join_rootdir=True),

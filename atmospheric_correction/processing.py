@@ -8,7 +8,7 @@ import rasterio
 
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
-from atmospheric_correction import io_utils
+from atmospheric_correction import tiling
 from atmospheric_correction.toa.radiance import toa_radiance
 from atmospheric_correction.toa.reflectance import toa_reflectance
 import atmospheric_correction.metadata.bands as meta_bands
@@ -131,6 +131,8 @@ def main(
             raise ValueError(
                     'To download MODIS parameters, you need to '
                     'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
+        if not os.path.isdir(modis_atm_dir):
+            os.makedirs(modis_atm_dir)
 
     sensor_group = sensors.sensor_group_bands(sensor)
     if band_ids is None:
@@ -186,18 +188,21 @@ def main(
             raise RuntimeError('Data is all zeros.')
 
         if tileSizePixels > 0:
-            windows = io_utils.get_tiled_windows(
-                    height=profile['height'],
-                    width=profile['width'],
-                    tilesize=tileSizePixels)
-            tile_extents = io_utils.get_transformed_bounds(
-                    windows,
-                    src_transform=profile['transform'],
-                    src_crs=profile['crs'],
-                    dst_crs={'init': 'epsg:4326'})
-
+            tilegrid_kw = dict(
+                    xtilesize=tileSizePixels,
+                    ytilesize=tileSizePixels)
         else:
-            tile_extents = np.array([[None]])
+            tilegrid_kw = dict(
+                    xtilesize=profile['width'],
+                    ytilesize=profile['height'])
+        tile_extents = tiling.get_tile_extents(
+                height=profile['height'],
+                width=profile['width'],
+                src_transform=profile['transform'],
+                src_crs=profile['crs'],
+                **tilegrid_kw)
+        if tile_extents.shape == ():
+            tile_extents = tile_extents.reshape((1, 1))
 
         # Structure holding the 6S correction parameters has, for each band in
         # the image, arrays of values (one for each tile)
@@ -215,13 +220,12 @@ def main(
         mysixs = None
         for j in range(nrows):
             for i in range(ncols):
-                extent = tile_extents[j, i]
+                extent = dict(zip(tile_extents.dtype.names, tile_extents[j, i]))
                 logger.debug('tile %d,%d extent is %s', j, i, extent)
                 atm = copy.copy(atm_original)
                 # If MODIS atmospheric data was downloaded then use it to set
                 # different atmospheric parameters for each tile
                 if use_modis:
-                    raise NotImplementedError()
                     atm_modis = modis_atm.params.retrieve_parameters(
                             date=date,
                             extent=extent,
