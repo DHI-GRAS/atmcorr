@@ -186,18 +186,23 @@ def main(
             raise RuntimeError('Data is all zeros.')
 
         if tileSizePixels > 0:
-            tileExtents = io_utils.getTileExtents(
+            windows = io_utils.get_tiled_windows(
                     height=profile['height'],
                     width=profile['width'],
-                    transform=profile['transform'],
-                    tileSize=tileSizePixels)
+                    tilesize=tileSizePixels)
+            tile_extents = io_utils.get_transformed_bounds(
+                    windows,
+                    src_transform=profile['transform'],
+                    src_crs=profile['crs'],
+                    dst_crs={'init': 'epsg:4326'})
+
         else:
-            tileExtents = np.array([[None]])
+            tile_extents = np.array([[None]])
 
         # Structure holding the 6S correction parameters has, for each band in
         # the image, arrays of values (one for each tile)
         # of the three correction parameters
-        nrows, ncols = tileExtents.shape[:2]
+        nrows, ncols = tile_extents.shape[:2]
         correctionParams = np.zeros(
                 (nbands, nrows, ncols),
                 dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
@@ -210,7 +215,7 @@ def main(
         mysixs = None
         for j in range(nrows):
             for i in range(ncols):
-                extent = tileExtents[j, i]
+                extent = tile_extents[j, i]
                 logger.debug('tile %d,%d extent is %s', j, i, extent)
                 atm = atm_original.copy()
                 # If MODIS atmospheric data was downloaded then use it to set

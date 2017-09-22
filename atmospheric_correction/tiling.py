@@ -1,5 +1,66 @@
 from __future__ import division
+
 import numpy as np
+
+import rasterio.windows
+import rasterio.warp
+
+
+def get_tiled_windows(height, width, tilesize):
+    """Tile image with width and height into windows of size tilesize
+
+    Paramters
+    ---------
+    height, width : int
+        image dimensions
+    tilesize : int
+        symmetric tile size
+
+    Returns
+    -------
+    ndarray shape(ny, nx) of rasterio.windows.Window
+        windows
+    """
+    nx = int(width / tilesize + 0.5)
+    ny = int(height / tilesize + 0.5)
+    windows = np.empty((ny, nx), dtype=object)
+    for j in range(ny):
+        for i in range(nx):
+            col_offset = i * tilesize
+            row_offset = j * tilesize
+            w = rasterio.windows.Window(col_offset, tilesize, row_offset, tilesize)
+            if j == (ny == 1) or i == (nx - 1):
+                w = rasterio.windows.crop(w, height, width)
+            windows[j, i] = w
+    return windows
+
+
+def _transform_bounds(w, src_transform, src_crs, dst_crs):
+    src_bounds = rasterio.windows.bounds(w, src_transform)
+    return rasterio.warp.transform_bounds(src_crs, dst_crs, *src_bounds)
+
+
+def get_transformed_bounds(windows, src_transform, src_crs, dst_crs):
+    """Get bounds for a sequence of windows in dst_crs
+
+    Parameters
+    ----------
+    windows : ndarray of rasterio.windows.Window
+        windows
+    src_transform : Affine
+        source image transform
+    src_crs, dst_crs : rasterio.crs.CRS or similar
+        source and destination coordinate
+        reference systems
+    """
+    newshape = (4, ) + windows.shape
+    bounds = np.zeros(newshape, int)
+    winiter = windows.flat
+    for _ in range(windows.size):
+        w = next(winiter)
+        j, i = winiter.coords
+        bounds[:, j, i] = _transform_bounds(w, src_transform, src_crs, dst_crs)
+    return bounds
 
 
 def getTileExtents(width, height, transform, tileSize):
@@ -66,6 +127,6 @@ def getExtent(gt, endCol, endRow, startCol=0, startRow=0):
         for py in yarr:
             x = gt[0] + (px * gt[1]) + (py * gt[2])
             y = gt[3] + (px * gt[4]) + (py * gt[5])
-            ext.append([x,y])
+            ext.append([x, y])
         yarr.reverse()
     return ext
