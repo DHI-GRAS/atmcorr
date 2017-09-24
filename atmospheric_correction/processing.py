@@ -31,7 +31,7 @@ def main_optdict(options):
 
 def main(
         sensor, mtdFile, method,
-        atm, aeroProfile,
+        aeroProfile, atm={},
         dnFile=None, data=None, profile=None,
         tileSizePixels=0,
         isPan=False, adjCorr=True,
@@ -51,7 +51,7 @@ def main(
         path to mtdFile file
     method : str
         6S, RAD, DOS, TOA (same as DOS)
-    atm : dict
+    atm : dict, optional
         atmospheric parameters
     aeroProfile : str
         aero profile name
@@ -187,17 +187,20 @@ def main(
         if not np.any(data):
             raise RuntimeError('Data is all zeros.')
 
+        height, width = data.shape[-2:]
+        profile.update(width=width, height=height)
+
         if tileSizePixels > 0:
             tilegrid_kw = dict(
                     xtilesize=tileSizePixels,
                     ytilesize=tileSizePixels)
         else:
             tilegrid_kw = dict(
-                    xtilesize=profile['width'],
-                    ytilesize=profile['height'])
+                    xtilesize=width,
+                    ytilesize=height)
         tile_extents = tiling.get_tile_extents(
-                height=profile['height'],
-                width=profile['width'],
+                height=height,
+                width=width,
                 src_transform=profile['transform'],
                 src_crs=profile['crs'],
                 **tilegrid_kw)
