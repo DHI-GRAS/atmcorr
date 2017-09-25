@@ -332,49 +332,49 @@ def _toa_radiance(
             doDOS=doDOS,
             band_ids=band_ids)
     if sensor_is(sensor, 'WV'):
-        import worldview.radiance
+        from atmospheric_correction import worldview
         return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'PHR'):
-        import pleiades.radiance
+        from atmospheric_correction import pleiades
         return pleiades.radiance.toa_radiance(**commonkw)
     elif sensor_is(sensor, 'L7L8'):
-        import landsat8.radiance
+        from atmospheric_correction import landsat8
         return landsat8.radiance.toa_radiance(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'S2'):
         commonkw.pop('doDOS')
-        import sentinel2.radiance
+        from atmospheric_correction import sentinel2
         return sentinel2.radiance.toa_radiance(mtdFile_tile=mtdFile_tile, **commonkw)
 
 
 def _toa_reflectance(data, mtdfile, sensor, band_ids):
     commonkw = dict(data=data, mtdfile=mtdfile)
     if sensor_is(sensor, 'WV'):
-        import worldview.reflectance
+        from atmospheric_correction import worldview
         res = worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
     elif sensor_is(sensor, 'PHR'):
-        import pleiades.reflectance
+        from atmospheric_correction import pleiades
         res = pleiades.reflectance.toa_reflectance(**commonkw)
     elif sensor_is(sensor, 'L7L8'):
-        import landsat8.reflectance
+        from atmospheric_correction import landsat8
         res = landsat8.reflectange.toa_reflectance(**commonkw)
     elif sensor_is(sensor, 'S2'):
-        import sentinel2.reflectance
+        from atmospheric_correction import sentinel2
         res = sentinel2.reflectance.toa_reflectance(**commonkw)
     return res
 
 
 def _get_sensing_date(sensor, mtdFile):
     if sensor_is(sensor, 'WV'):
-        import worldview.metadata
+        from atmospheric_correction import worldview
         return worldview.metadata.get_date(mtdFile)
     elif sensor_is(sensor, 'L7L8'):
-        import landsat8.metadata
+        from atmospheric_correction import landsat8
         return landsat8.metadata.get_date(mtdFile)
     elif sensor_is(sensor, "PHR"):
-        import pleiades.metadata
+        from atmospheric_correction import pleiades
         return pleiades.metadata.get_date(mtdFile)
     elif sensor_is(sensor, 'S2'):
-        import sentinel2.metadata
+        from atmospheric_correction import sentinel2
         return sentinel2.metadata.get_date(mtdFile)
     else:
         raise ValueError('Unknown sensor.')
