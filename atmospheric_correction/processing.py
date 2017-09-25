@@ -9,10 +9,7 @@ import rasterio
 from atmospheric_correction import wrap_6S
 from atmospheric_correction import sensors
 from atmospheric_correction import tiling
-from atmospheric_correction.toa.radiance import toa_radiance
-from atmospheric_correction.toa.reflectance import toa_reflectance
-import atmospheric_correction.metadata.bands as meta_bands
-import atmospheric_correction.metadata.dates as meta_dates
+from atmospheric_correction.sensors import sensor_is
 
 try:
     import modis_atm.params
@@ -132,21 +129,8 @@ def main(
         if not os.path.isdir(modis_atm_dir):
             os.makedirs(modis_atm_dir)
 
-    sensor_group = sensors.sensor_group_bands(sensor)
-    if band_ids is None:
-        try:
-            band_ids = meta_bands.default_band_ids[sensor_group]
-            logger.info('Assuming original set of %d bands.', len(band_ids))
-        except KeyError:
-            pass
-
-    kwargs_toa_radiance = dict(
-            mtdFile=mtdFile,
-            mtdFile_tile=mtdFile_tile,
-            band_ids=band_ids)
-
     if date is None:
-        date = meta_dates.get_sensing_date(sensor, mtdFile)
+        date = _get_sensing_date(sensor, mtdFile)
     else:
         date = dateutil.parser.parse(date)
 
@@ -160,6 +144,14 @@ def main(
         raise ValueError(
                 'Number of band IDs ({}) does not correspond to number of bands ({}).'
                 .format(len(band_ids), nbands))
+
+    if band_ids is None:
+        band_ids = np.arange(nbands)
+
+    kwargs_toa_radiance = dict(
+            mtdFile=mtdFile,
+            mtdFile_tile=mtdFile_tile,
+            band_ids=band_ids)
 
     nodata = profile['nodata']
     if nodata is not None:
@@ -189,14 +181,14 @@ def main(
 
         if sensors.sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            data = toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
         else:
-            data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
 
     elif method == 'RAD':
         doDOS = False
-        data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+        data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
 
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
@@ -226,7 +218,7 @@ def _main_6S(
     res = profile['transform'].a
 
     logger.info('Computing TOA radiance ...')
-    data = toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
@@ -310,3 +302,79 @@ def _main_6S(
             mysixs=mysixs)
 
     return data
+
+
+def _toa_radiance(
+        data, sensor, mtdFile, band_ids,
+        doDOS=False, mtdFile_tile=None):
+    """Compute TOA radiance
+
+    Parameters
+    ----------
+    data : ndarray shape(nbands, ny, nx)
+        input data
+    sensor : str
+        sensor name
+    mtdFile : str
+        path to metadata file
+    band_ids : list of int
+        band IDs of original product contained in array
+        0-based
+    doDOS : bool
+        do a dark object subtraction
+    mtdFile_tile : str
+        tile metadata file
+        required for Sentinel 2
+    """
+    commonkw = dict(
+            data=data,
+            mtdFile=mtdFile,
+            doDOS=doDOS,
+            band_ids=band_ids)
+    if sensor_is(sensor, 'WV'):
+        import worldview.radiance
+        return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
+    elif sensor_is(sensor, 'PHR'):
+        import pleiades.radiance
+        return pleiades.radiance.toa_radiance(**commonkw)
+    elif sensor_is(sensor, 'L7L8'):
+        import landsat8.radiance
+        return landsat8.radiance.toa_radiance(sensor=sensor, **commonkw)
+    elif sensor_is(sensor, 'S2'):
+        commonkw.pop('doDOS')
+        import sentinel2.radiance
+        return sentinel2.radiance.toa_radiance(mtdFile_tile=mtdFile_tile, **commonkw)
+
+
+def _toa_reflectance(data, mtdfile, sensor, band_ids):
+    commonkw = dict(data=data, mtdfile=mtdfile)
+    if sensor_is(sensor, 'WV'):
+        import worldview.reflectance
+        res = worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
+    elif sensor_is(sensor, 'PHR'):
+        import pleiades.reflectance
+        res = pleiades.reflectance.toa_reflectance(**commonkw)
+    elif sensor_is(sensor, 'L7L8'):
+        import landsat8.reflectance
+        res = landsat8.reflectange.toa_reflectance(**commonkw)
+    elif sensor_is(sensor, 'S2'):
+        import sentinel2.reflectance
+        res = sentinel2.reflectance.toa_reflectance(**commonkw)
+    return res
+
+
+def _get_sensing_date(sensor, mtdFile):
+    if sensor_is(sensor, 'WV'):
+        import worldview.metadata
+        return worldview.metadata.get_date(mtdFile)
+    elif sensor_is(sensor, 'L7L8'):
+        import landsat8.metadata
+        return landsat8.metadata.get_date(mtdFile)
+    elif sensor_is(sensor, "PHR"):
+        import pleiades.metadata
+        return pleiades.metadata.get_date(mtdFile)
+    elif sensor_is(sensor, 'S2'):
+        import sentinel2.metadata
+        return sentinel2.metadata.get_date(mtdFile)
+    else:
+        raise ValueError('Unknown sensor.')
