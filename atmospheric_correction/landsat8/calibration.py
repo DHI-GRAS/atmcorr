@@ -20,12 +20,3 @@ def get_correction_factors(mtdfile):
             if match:
                 add_factor.append(float(match.group(1)))
     return np.array(mult_factor), np.array(add_factor)
-
-
-def get_visnirbands(sensor):
-    if sensor == "L8":
-        # The first 5 bands in L8 are VIS/NIR
-        return np.arange(1, 6)
-    elif sensor == "L7":
-        # The first 4 bands in L7 are VIS/NIR
-        return np.arange(1, 5)

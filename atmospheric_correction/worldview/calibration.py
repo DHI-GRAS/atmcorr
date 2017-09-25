@@ -17,6 +17,30 @@ BIAS = {
             7.07, 4.253, 2.633, 2.074, 1.807, 2.633, 3.406,
             2.258, 2.22])}  # as per calibration from DG relased 3/6/2015
 
+SSI = {
+        'WV02': [
+            1758.2229, 1974.2416,
+            1856.4104, 1738.4791, 1559.4555,
+            1342.0695, 1069.7302, 861.2866,
+            1580.8140],
+        'WV03': [
+            1757.89, 2004.61,
+            1830.18, 1712.07, 1535.33,
+            1348.08, 1055.94, 858.77,
+            1574.41],  # Thuillier 2003
+        'WV03_ChKur': [
+             1743.9, 1974.53,
+             1858.1, 1748.87, 1550.58,
+             1303.4, 1063.92, 858.632,
+             1578.28],  # ChKur
+        'WV03_WRC': [
+            1743.81, 1971.48,
+            1856.26, 1749.4, 1555.11,
+            1343.95, 1071.98, 863.296,
+            1583.58],  # WRC
+        'GE01': [
+            196.0, 185.3, 150.5, 103.9, 161.7]}
+
 
 def get_effectivebw_abscalfactor_WV(mtdfile):
     # get the correction factors from the metadata file, assuming the number and
@@ -91,33 +115,9 @@ def get_earth_sun_distance(mtdfile):
     # GE01 irradiance is from
     # https://apollomapping.com/wp-content/user_uploads/2011/09/GeoEye1_Radiance_at_Aperture.pdf
     # and is in units of (mW/cm^2/mum/str)
-    ssi = {
-            'WV02': [
-                1758.2229, 1974.2416,
-                1856.4104, 1738.4791, 1559.4555,
-                1342.0695, 1069.7302, 861.2866,
-                1580.8140],
-            'WV03': [
-                1757.89, 2004.61,
-                1830.18, 1712.07, 1535.33,
-                1348.08, 1055.94, 858.77,
-                1574.41],  # Thuillier 2003
-            'WV03_ChKur': [
-                 1743.9, 1974.53,
-                 1858.1, 1748.87, 1550.58,
-                 1303.4, 1063.92, 858.632,
-                 1578.28],  # ChKur
-            'WV03_WRC': [
-                1743.81, 1971.48,
-                1856.26, 1749.4, 1555.11,
-                1343.95, 1071.98, 863.296,
-                1583.58],  # WRC
-            'GE01': [
-                196.0, 185.3, 150.5, 103.9, 161.7]}
-
     satID, sza, date, hours = _get_meta(mtdfile)
 
-    ssi = ssi[satID]
+    ssi = SSI[satID]
 
     # get actual Earth-Sun distance follwoing equations from
     # Radiometric Use Of WorldView-2 Imagery - Technical note
