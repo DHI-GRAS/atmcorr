@@ -276,7 +276,7 @@ def _main_6S(
                         extent=extent,
                         credentials=earthdata_credentials,
                         download_dir=modis_atm_dir)
-                atm = copy.copy(atm_original)
+                atm = copy.copy(atm)
                 for key in atm_modis:
                     if key not in atm or atm[key] is None:
                         atm[key] = atm_modis[key]
@@ -307,3 +307,5 @@ def _main_6S(
     data = wrap_6S.perform_correction(
             data, correctionParams, pixel_size=res, adjCorr=adjCorr,
             mysixs=mysixs)
+
+    return data
