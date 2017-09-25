@@ -2,7 +2,7 @@ name: atmcorr
 channels:
     - conda-forge
 dependencies:
-    - python=2
+    - python=3
     - rasterio
     - numpy
     - numexpr
@@ -12,5 +12,10 @@ dependencies:
     - click
     - ruamel.yaml
     - Py6S
+    - pyproj
+    - lxml
+    - shapely
     - pip:
         - https://github.com/DHI-GRAS/yamlconfig/archive/master.zip
+        - https://github.com/DHI-GRAS/satmeta/archive/master.zip
+        - https://github.com/DHI-GRAS/sensor_response_curves/archive/master.zip
