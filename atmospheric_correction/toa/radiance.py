@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 
 def toa_radiance(
         data, sensor, mtdFile, band_ids,
-        doDOS=False, isPan=False, mtdFile_tile=None):
+        doDOS=False, mtdFile_tile=None):
     """Compute TOA radiance
 
     Parameters
@@ -27,8 +27,6 @@ def toa_radiance(
         0-based
     doDOS : bool
         do a dark object subtraction
-    isPan : bool
-        isPan
     mtdFile_tile : str
         tile metadata file
         required for Sentinel 2
@@ -39,7 +37,7 @@ def toa_radiance(
             doDOS=doDOS,
             band_ids=band_ids)
     if sensor_is(sensor, 'WV'):
-        return toa_radiance_WV(isPan=isPan, sensor=sensor, **commonkw)
+        return toa_radiance_WV(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'PHR'):
         return toa_radiance_PHR1(**commonkw)
     elif sensor_is(sensor, 'L7L8'):
@@ -49,10 +47,11 @@ def toa_radiance(
         return toa_radiance_S2(mtdFile_tile=mtdFile_tile, **commonkw)
 
 
-def toa_radiance_WV(data, mtdFile, sensor, band_ids, isPan, doDOS=False):
+def toa_radiance_WV(data, mtdFile, sensor, band_ids, doDOS=False):
     """Compute TOA radiance for WV"""
 
-    gain, bias = metamod.wv.get_gain_bias_WV(sensor, isPan)
+    gain = metamod.wv.GAIN[sensor]
+    bias = metamod.wv.BIAS[sensor]
     effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
     scalefactor = abscalfactor / effectivebw * (2 - gain)
     bias_bands = bias[band_ids]

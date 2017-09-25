@@ -124,7 +124,6 @@ def get_correction_params(
         mtdFile,
         atm,
         band_ids,
-        isPan=False,
         mtdFile_tile=None,
         aeroProfile="Continental",
         extent=None,
@@ -142,8 +141,6 @@ def get_correction_params(
     band_ids : list of int
         bands in input data
         0-based index wrt. original product
-    isPan : bool
-        who is Pan?
     mtdFile_tile : str
         path to tile metadata file
         required for Sentinel 2
@@ -154,14 +151,14 @@ def get_correction_params(
     nprocs : int
         number of processors to use
     """
-    logger.info('Getting correction parameters.')
+    logger.info('Getting correction parameters')
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 
     # Set 6S band filters
     wavelength, rcurves = srcurves.get_response_curves(
-            sensor, band_ids=band_ids, pan_only=isPan)
-    wavelength = wavelength.astype("float") / 1e3
+            sensor, band_ids=band_ids)
+    wavelength = wavelength.astype('float') / 1e3
     start_wv = wavelength[0]
     end_wv = wavelength[-1]
 
@@ -171,6 +168,8 @@ def get_correction_params(
                 wavelength, rcurves, resolution=0.0025)
 
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
+
+    nprocs = min((nprocs, len(rcurves)))
 
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
@@ -200,7 +199,6 @@ def get_correction_params(
         mysixs = res[1]
     pool.close()
     pool.join()
-    logger.info('Got correction parameters.')
     return mysixs, output
 
 

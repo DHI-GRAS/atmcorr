@@ -11,7 +11,7 @@ logger = logging.getLogger(__name__)
 def toa_reflectance(data, mtdfile, sensor, band_ids):
     commonkw = dict(data=data, mtdfile=mtdfile)
     if sensor_is(sensor, 'WV'):
-        res = toa_reflectance_WV2(band_ids=band_ids, **commonkw)
+        res = toa_reflectance_WV(band_ids=band_ids, **commonkw)
     elif sensor_is(sensor, 'PHR'):
         res = toa_reflectance_PHR1(**commonkw)
     elif sensor_is(sensor, 'L7L8'):
@@ -21,8 +21,8 @@ def toa_reflectance(data, mtdfile, sensor, band_ids):
     return res
 
 
-def toa_reflectance_WV2(data, mtdfile, band_ids):
-    """Estimate toa reflectance of radiometric WV2 data ignoric atmospheric, topographic and
+def toa_reflectance_WV(data, mtdfile, band_ids):
+    """Estimate toa reflectance of radiometric WV data ignoric atmospheric, topographic and
        BRDF effects.
 
     Notes

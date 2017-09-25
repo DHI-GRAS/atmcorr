@@ -3,28 +3,19 @@ import datetime
 
 import numpy as np
 
+GAIN = {
+        'WV2': np.array([
+            0.8632, 1.001, 1.0436, 1.0305, 1.0249, 0.9779, 0.981, 0.9217, 1.0264]),
+        'WV3': np.array([
+            1.157, 1.07, 1.082, 1.048, 1.028, 0.979, 1.006,
+            0.975, 1.045])}  # as per calibration from DG released 3/6/2015
 
-def get_gain_bias_WV(sensor, isPan):
-    """Get WV calibration factors"""
-    if sensor == "WV3":
-        # WV3 calibration factors
-        if isPan:
-            gain = [1.045]
-            bias = [2.22]
-        else:
-            gain = [1.157, 1.07, 1.082, 1.048, 1.028, 0.979, 1.006,
-                    0.975]  # as per calibration from DG released 3/6/2015
-            bias = [7.07, 4.253, 2.633, 2.074, 1.807, 2.633, 3.406,
-                    2.258]  # as per calibration from DG relased 3/6/2015
-    else:
-        # WV2 calibration factors
-        if isPan:
-            gain = [1.0264]
-            bias = [6.5783]
-        else:
-            gain = [0.8632, 1.001, 1.0436, 1.0305, 1.0249, 0.9779, 0.981, 0.9217]
-            bias = [6.6863, 2.399, 0.3973, 0.7744, -0.1495, 2.0383, 1.859, 2.0357]
-    return np.array(gain), np.array(bias)
+BIAS = {
+        'WV2': np.array([
+            6.6863, 2.399, 0.3973, 0.7744, -0.1495, 2.0383, 1.859, 2.0357, 6.5783]),
+        'WV3': np.array([
+            7.07, 4.253, 2.633, 2.074, 1.807, 2.633, 3.406,
+            2.258, 2.22])}  # as per calibration from DG relased 3/6/2015
 
 
 def get_effectivebw_abscalfactor_WV(mtdfile):
@@ -95,30 +86,34 @@ def _get_meta(mtdfile):
 def get_earth_sun_distance(mtdfile):
 
     # Band averaged solar spectral irradiances at 1 AU Earth-Sun distance.
-    # The first one is for panchromatic band.
+    # The last one is for panchromatic band.
     # For WV2 coming from Table 4 from the document in units of (W/m^2/\mum/str).
     # GE01 irradiance is from
     # https://apollomapping.com/wp-content/user_uploads/2011/09/GeoEye1_Radiance_at_Aperture.pdf
     # and is in units of (mW/cm^2/mum/str)
     ssi = {
-            "WV02": [
-                1580.8140, 1758.2229, 1974.2416,
+            'WV02': [
+                1758.2229, 1974.2416,
                 1856.4104, 1738.4791, 1559.4555,
-                1342.0695, 1069.7302, 861.2866],
-            "WV03": [
-                1574.41, 1757.89, 2004.61,
+                1342.0695, 1069.7302, 861.2866,
+                1580.8140],
+            'WV03': [
+                1757.89, 2004.61,
                 1830.18, 1712.07, 1535.33,
-                1348.08, 1055.94, 858.77],  # Thuillier 2003
-            "WV03_ChKur": [
-                 1578.28, 1743.9, 1974.53,
+                1348.08, 1055.94, 858.77,
+                1574.41],  # Thuillier 2003
+            'WV03_ChKur': [
+                 1743.9, 1974.53,
                  1858.1, 1748.87, 1550.58,
-                 1303.4, 1063.92, 858.632],  # ChKur
-            "WV03_WRC": [
-                1583.58, 1743.81, 1971.48,
+                 1303.4, 1063.92, 858.632,
+                 1578.28],  # ChKur
+            'WV03_WRC': [
+                1743.81, 1971.48,
                 1856.26, 1749.4, 1555.11,
-                1343.95, 1071.98, 863.296],  # WRC
-            "GE01": [
-                161.7, 196.0, 185.3, 150.5, 103.9]}
+                1343.95, 1071.98, 863.296,
+                1583.58],  # WRC
+            'GE01': [
+                196.0, 185.3, 150.5, 103.9, 161.7]}
 
     satID, sza, date, hours = _get_meta(mtdfile)
 
@@ -134,7 +129,10 @@ def get_earth_sun_distance(mtdfile):
         month += 12.0
     A = int(year/100.0)
     B = 2.0-A+int(A/4.0)
-    JD = int(365.25 * (year + 4716.0)) + int(30.6001 * (month + 1)) + day + hours / 24.0 + B - 1524.5
+    JD = (
+            int(365.25 * (year + 4716.0)) +
+            int(30.6001 * (month + 1)) +
+            day + hours / 24.0 + B - 1524.5)
     D = JD - 2451545.0
     g = 357.529 + 0.98560025 * D
     des = 1.00014 - 0.01671 * np.cos(np.radians(g)) - 0.00014 * np.cos(np.radians(2 * g))

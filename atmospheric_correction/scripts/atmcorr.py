@@ -11,7 +11,6 @@ logger = logging.getLogger(__name__)
             'sensor', 'dnFile', 'mtdFile',
             'method', 'atm', 'aeroProfile', 'tileSizePixels',
             'outfile',
-            ('isPan', False),
             ('adjCorr', False),
             ('mtdFile_tile', None),
             ('nprocs', None),

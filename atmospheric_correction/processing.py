@@ -34,7 +34,7 @@ def main(
         aeroProfile, atm={},
         dnFile=None, data=None, profile=None,
         tileSizePixels=0,
-        isPan=False, adjCorr=True,
+        adjCorr=True,
         aotMultiplier=1.0, nprocs=None,
         mtdFile_tile=None, band_ids=None, date=None,
         outfile=None, return_profile=False,
@@ -66,8 +66,6 @@ def main(
         required when using data
     tileSizePixels : int
         tile size in pixels
-    isPan : bool
-        use Pan band only
     adjCorr : bool
         perform adjacency correction
     aotMultiplier : float
@@ -143,7 +141,6 @@ def main(
             pass
 
     kwargs_toa_radiance = dict(
-            isPan=isPan,
             mtdFile=mtdFile,
             mtdFile_tile=mtdFile_tile,
             band_ids=band_ids)
@@ -171,101 +168,18 @@ def main(
             profile['nodata'] = 0
 
     # keep unchanged copy of atm dict
-    if atm is not None:
-        atm_original = copy.deepcopy(atm)
-        atm = None
-    else:
-        atm_original = {'AOT': None, 'PWV': None, 'ozone': None}
+    if atm is None:
+        atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
     # DN -> Radiance -> Reflectance
-    if method == "6S":
-        doDOS = False
-        res = profile['transform'].a
-
-        logger.info('Computing TOA radiance ...')
-        data = toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-        if not np.any(data):
-            raise RuntimeError('Data is all zeros.')
-
-        height, width = data.shape[-2:]
-        profile.update(width=width, height=height)
-
-        if tileSizePixels > 0:
-            tilegrid_kw = dict(
-                    xtilesize=tileSizePixels,
-                    ytilesize=tileSizePixels)
-        else:
-            tilegrid_kw = dict(
-                    xtilesize=width,
-                    ytilesize=height)
-        tile_extents = tiling.get_tile_extents(
-                height=height,
-                width=width,
-                src_transform=profile['transform'],
-                src_crs=profile['crs'],
-                **tilegrid_kw)
-        if tile_extents.shape == ():
-            tile_extents = tile_extents.reshape((1, 1))
-
-        # Structure holding the 6S correction parameters has, for each band in
-        # the image, arrays of values (one for each tile)
-        # of the three correction parameters
-        nrows, ncols = tile_extents.shape[:2]
-        correctionParams = np.zeros(
-                (nbands, nrows, ncols),
-                dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
-
-        nruns = nrows * ncols
-        if nruns > 1 and adjCorr:
-            raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
-
-        # Get 6S correction parameters for an extent of each tile
-        mysixs = None
-        for j in range(nrows):
-            for i in range(ncols):
-                extent = dict(zip(tile_extents.dtype.names, tile_extents[j, i]))
-                logger.debug('tile %d,%d extent is %s', j, i, extent)
-                atm = copy.copy(atm_original)
-                # If MODIS atmospheric data was downloaded then use it to set
-                # different atmospheric parameters for each tile
-                if use_modis:
-                    atm_modis = modis_atm.params.retrieve_parameters(
-                            date=date,
-                            extent=extent,
-                            credentials=earthdata_credentials,
-                            download_dir=modis_atm_dir)
-                    atm = copy.copy(atm_original)
-                    for key in atm_modis:
-                        if key not in atm or atm[key] is None:
-                            atm[key] = atm_modis[key]
-
-                atm['AOT'] *= aotMultiplier
-                logger.debug('AOT: %s', atm['AOT'])
-                logger.debug('Water Vapour: %s', atm['PWV'])
-                logger.debug('Ozone: %s', atm['ozone'])
-
-                mysixs, tilecp = wrap_6S.get_correction_params(
-                        sensor=sensor,
-                        mtdFile=mtdFile,
-                        mtdFile_tile=mtdFile_tile,
-                        atm=atm,
-                        band_ids=band_ids,
-                        isPan=isPan,
-                        aeroProfile=aeroProfile,
-                        extent=extent,
-                        nprocs=nprocs)
-
-                nbands = len(tilecp)
-                for b in range(nbands):
-                    correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
-                    correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
-                    correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
-
-        logger.debug('Correction parameters: %s', np.squeeze(correctionParams))
-
-        data = wrap_6S.perform_correction(
-                data, correctionParams, pixel_size=res, adjCorr=adjCorr,
-                mysixs=mysixs)
+    if method == '6S':
+        data = _main_6S(
+                data, profile, band_ids, sensor, date,
+                mtdFile, mtdFile_tile,
+                atm, kwargs_toa_radiance, tileSizePixels,
+                adjCorr, aotMultiplier, aeroProfile,
+                use_modis, modis_atm_dir, earthdata_credentials,
+                nprocs)
 
     elif method in ['DOS', 'TOA']:
         if method == 'DOS':
@@ -292,8 +206,104 @@ def main(
     if outfile is not None:
         with rasterio.open(outfile, 'w', **profile) as dst:
             dst.write(data)
+        logger.info('Saved output to \'%s\'', outfile)
     else:
         if return_profile:
             return data, profile
         else:
             return data
+
+
+def _main_6S(
+        data, profile, band_ids, sensor, date,
+        mtdFile, mtdFile_tile,
+        atm, kwargs_toa_radiance, tileSizePixels,
+        adjCorr, aotMultiplier, aeroProfile,
+        use_modis, modis_atm_dir, earthdata_credentials,
+        nprocs):
+
+    res = profile['transform'].a
+
+    logger.info('Computing TOA radiance ...')
+    data = toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    if not np.any(data):
+        raise RuntimeError('Data is all zeros.')
+
+    nbands, height, width = data.shape
+    profile.update(width=width, height=height)
+
+    if tileSizePixels > 0:
+        tilegrid_kw = dict(
+                xtilesize=tileSizePixels,
+                ytilesize=tileSizePixels)
+    else:
+        tilegrid_kw = dict(
+                xtilesize=width,
+                ytilesize=height)
+    tile_extents = tiling.get_tile_extents(
+            height=height,
+            width=width,
+            src_transform=profile['transform'],
+            src_crs=profile['crs'],
+            **tilegrid_kw)
+    if tile_extents.shape == ():
+        tile_extents = tile_extents.reshape((1, 1))
+
+    # Structure holding the 6S correction parameters has, for each band in
+    # the image, arrays of values (one for each tile)
+    # of the three correction parameters
+    njtiles, nitiles = tile_extents.shape
+    correctionParams = np.zeros(
+            (nbands, njtiles, nitiles),
+            dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+
+    nruns = njtiles * nitiles
+    if nruns > 1 and adjCorr:
+        raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
+
+    # Get 6S correction parameters for an extent of each tile
+    mysixs = None
+    for j in range(njtiles):
+        for i in range(nitiles):
+            extent = dict(zip(tile_extents.dtype.names, tile_extents[j, i]))
+            logger.debug('tile %d,%d extent is %s', j, i, extent)
+            atm = copy.copy(atm)
+            # If MODIS atmospheric data was downloaded then use it to set
+            # different atmospheric parameters for each tile
+            if use_modis:
+                atm_modis = modis_atm.params.retrieve_parameters(
+                        date=date,
+                        extent=extent,
+                        credentials=earthdata_credentials,
+                        download_dir=modis_atm_dir)
+                atm = copy.copy(atm_original)
+                for key in atm_modis:
+                    if key not in atm or atm[key] is None:
+                        atm[key] = atm_modis[key]
+
+            atm['AOT'] *= aotMultiplier
+            logger.debug('AOT: %s', atm['AOT'])
+            logger.debug('Water Vapour: %s', atm['PWV'])
+            logger.debug('Ozone: %s', atm['ozone'])
+
+            mysixs, tilecp = wrap_6S.get_correction_params(
+                    sensor=sensor,
+                    mtdFile=mtdFile,
+                    mtdFile_tile=mtdFile_tile,
+                    atm=atm,
+                    band_ids=band_ids,
+                    aeroProfile=aeroProfile,
+                    extent=extent,
+                    nprocs=nprocs)
+
+            nbands = len(tilecp)
+            for b in range(nbands):
+                correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
+                correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
+                correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
+    logger.debug('Correction parameters: %s', correctionParams)
+
+    logger.info('Apply parameters to image')
+    data = wrap_6S.perform_correction(
+            data, correctionParams, pixel_size=res, adjCorr=adjCorr,
+            mysixs=mysixs)
