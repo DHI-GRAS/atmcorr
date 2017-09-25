@@ -7,7 +7,6 @@ atm:
     PWV: 1.0
     ozone: 0.15
 method: 6S
-isPan: false
 adjCorr: false
 aeroProfile: Maritime
 tileSizePixels: 0

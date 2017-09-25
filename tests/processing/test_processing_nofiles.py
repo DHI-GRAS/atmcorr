@@ -41,7 +41,6 @@ def test_workflow_artificial_data():
             profile=profile,
             tileSizePixels=0,
             band_ids=band_ids,
-            isPan=False,
             adjCorr=True,
             aotMultiplier=1.0,
             nprocs=None,

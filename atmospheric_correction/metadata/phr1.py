@@ -5,8 +5,8 @@ import numpy as np
 def get_gain_bias_PHR1(mtdfile):
 
     # get correction factors
-    gain = [0, 0, 0, 0]
-    bias = [0, 0, 0, 0]
+    gain = np.zeros(4)
+    bias = np.zeros(4)
 
     # In the XML file the band order is specified as BGRN.
     # However in reality it is RGBN. Therefore mapping is required
@@ -24,4 +24,4 @@ def get_gain_bias_PHR1(mtdfile):
         band = Band_Radiance.findall('BAND_ID')[0].text
         gain[bandMapping[band]] = float(Band_Radiance.findall('GAIN')[0].text)
         bias[bandMapping[band]] = float(Band_Radiance.findall('BIAS')[0].text)
-    return np.array(gain), np.array(bias)
+    return gain, bias

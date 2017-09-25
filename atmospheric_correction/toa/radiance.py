@@ -50,8 +50,8 @@ def toa_radiance(
 def toa_radiance_WV(data, mtdFile, sensor, band_ids, doDOS=False):
     """Compute TOA radiance for WV"""
 
-    gain = metamod.wv.GAIN[sensor]
-    bias = metamod.wv.BIAS[sensor]
+    gain = metamod.wv.GAIN[sensor][:-1]
+    bias = metamod.wv.BIAS[sensor][:-1]
     effectivebw, abscalfactor = metamod.wv.get_effectivebw_abscalfactor_WV(mtdFile)
     scalefactor = abscalfactor / effectivebw * (2 - gain)
     bias_bands = bias[band_ids]
