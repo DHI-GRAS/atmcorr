@@ -3,7 +3,7 @@ from xml.etree import ElementTree as ET
 import dateutil.parser
 
 
-def get_date_phr(mtdFile):
+def get_date(mtdFile):
     tree = ET.parse(mtdFile)
     # get down to the appropirate node
     root = tree.getroot()

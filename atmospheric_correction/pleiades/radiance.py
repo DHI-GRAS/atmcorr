@@ -3,15 +3,16 @@ import logging
 import numpy as np
 
 from atmospheric_correction import dos
+from atmospheric_correction.pleiades import calibration
 
 logger = logging.getLogger(__name__)
 
 
-def toa_radiance_PHR1(data, mtdFile, band_ids, doDOS=False):
+def toa_radiance(data, mtdFile, band_ids, doDOS=False):
     """Apply radiometric correction to Pleadis image,
        with DOS atmospheric correction optional.
     """
-    gain, bias = metamod.phr1.get_gain_bias_PHR1(mtdFile)
+    gain, bias = calibration.get_gain_bias_PHR1(mtdFile)
 
     gain = [gain[i] for i in band_ids]
     bias = [bias[i] for i in band_ids]

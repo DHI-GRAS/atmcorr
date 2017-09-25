@@ -2,6 +2,8 @@ import logging
 
 import numpy as np
 
+from atmospheric_correction.worldview import calibration
+
 logger = logging.getLogger(__name__)
 
 
@@ -17,7 +19,7 @@ def toa_reflectance_WV(data, mtdfile, band_ids):
     Also works with GeoEye-1 and might work with other Digital Globe
     providers after a small modification
     """
-    des, ssi, sza = wvmeta.get_earth_sun_distance(mtdfile)
+    des, ssi, sza = calibration.get_earth_sun_distance(mtdfile)
 
     # apply the radiometric correction factors to input image
     logger.info("TOA reflectance")

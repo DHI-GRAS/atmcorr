@@ -2,7 +2,7 @@ import re
 import datetime
 
 
-def get_date_l7l8(mtdFile):
+def get_date(mtdFile):
     DATEACQUIREDRegex = "\s*DATE_ACQUIRED\s*=\s*(\d{4})[-_](\d{2})[-_](\d{2})"
     with open(mtdFile, 'r') as metadata:
         for line in metadata:

@@ -2,10 +2,12 @@ import logging
 
 import numpy as np
 
+from atmospheric_correction.sentinel2 import metadata as metamod
+
 logger = logging.getLogger(__name__)
 
 
-def toa_radiance_S2(data, mtdFile, mtdFile_tile, band_ids):
+def toa_radiance(data, mtdFile, mtdFile_tile, band_ids):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters
@@ -27,7 +29,7 @@ def toa_radiance_S2(data, mtdFile, mtdFile_tile, band_ids):
     if mtdFile_tile is None:
         raise ValueError('Tile metadata file required!')
 
-    metadata = metamod.s2.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
+    metadata = metamod.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
     tile = list(metadata['granules'])[0]
     logger.debug('Tile is \'%s\'.', tile)
     rc = metadata['reflectance_conversion']

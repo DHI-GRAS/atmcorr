@@ -3,7 +3,7 @@ import logging
 logger = logging.getLogger(__name__)
 
 
-def toa_reflectance_S2(data, metadata):
+def toa_reflectance(data, metadata):
     """Convert to TOA reflectance
 
     Assumes a L1C product which contains TOA reflectance:

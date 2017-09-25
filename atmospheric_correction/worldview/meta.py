@@ -1,7 +1,7 @@
 import dateutil
 
 
-def get_date_wv(mtdFile):
+def get_date(mtdFile):
     timekeys = ['firstLinetime', 'earliestAcqTime']
     with open(mtdFile, 'r') as fin:
         for line in fin:

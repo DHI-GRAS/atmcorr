@@ -3,12 +3,13 @@ import logging
 import numpy as np
 
 from atmospheric_correction import dos
+from atmospheric_correction.landsat8 import calibration
 
 logger = logging.getLogger(__name__)
 
 
-def toa_radiance_L8(data, mtdFile, sensor, band_ids, doDOS=False):
-    to_multiply, to_add = metamod.l78.get_correction_factors(mtdFile)
+def toa_radiance(data, mtdFile, sensor, band_ids, doDOS=False):
+    to_multiply, to_add = calibration.get_correction_factors(mtdFile)
 
     # subset to band IDs
     to_multiply = [to_multiply[i] for i in band_ids]
