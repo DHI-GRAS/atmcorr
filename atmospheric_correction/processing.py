@@ -118,7 +118,7 @@ def main(
         raise ValueError(
                 'Data array must have bands as its first dimension.'
                 'Number of bands was {} but data has shape {}.'
-                ''.format(profile['count'], data.shape))
+                .format(profile['count'], data.shape))
 
     if use_modis:
         if not HAS_MODIS:
@@ -158,8 +158,8 @@ def main(
     nbands = profile['count']
     if len(band_ids) != nbands:
         raise ValueError(
-                'Number of band IDs {} does not correspond to number of bands {}.',
-                ''.format(len(band_ids), nbands))
+                'Number of band IDs ({}) does not correspond to number of bands ({}).'
+                .format(len(band_ids), nbands))
 
     nodata = profile['nodata']
     if nodata is not None:
@@ -203,10 +203,11 @@ def main(
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
+    logger.debug(profile)
     if outfile is not None:
+        logger.info('Saving output to \'%s\'', outfile)
         with rasterio.open(outfile, 'w', **profile) as dst:
             dst.write(data)
-        logger.info('Saved output to \'%s\'', outfile)
     else:
         if return_profile:
             return data, profile
