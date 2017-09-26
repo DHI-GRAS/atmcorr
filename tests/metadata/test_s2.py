@@ -1,4 +1,4 @@
-import atmospheric_correction.metadata.s2 as s2meta
+import atmospheric_correction.sentinel2.metadata as s2meta
 
 from . import testdata_s2l1c as testdata
 

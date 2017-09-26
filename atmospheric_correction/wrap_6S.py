@@ -15,9 +15,9 @@ from Py6S import Geometry
 import sensor_response_curves as srcurves
 import sensor_response_curves.resample as srcresample
 
-from atmospheric_correction import viewing_geometry as vg
 from atmospheric_correction import utils
 from atmospheric_correction import exception_handling
+from atmospheric_correction import viewing_geometry as vg
 
 logger = logging.getLogger(__name__)
 

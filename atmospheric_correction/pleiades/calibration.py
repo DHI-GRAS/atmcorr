@@ -2,7 +2,7 @@ from xml.etree import ElementTree as ET
 import numpy as np
 
 
-def get_gain_bias_PHR1(mtdfile):
+def get_gain_bias(mtdfile):
 
     # get correction factors
     gain = np.zeros(4)
