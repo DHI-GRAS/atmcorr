@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='atmcorr',
-    version='0.7',
+    version='0.7.1',
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
