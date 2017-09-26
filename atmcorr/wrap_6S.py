@@ -197,7 +197,7 @@ def get_correction_params(
             (mysixs, start_wv, end_wv, rcurve)
             for rcurve in rcurves]
 
-    logger.info(
+    logger.debug(
             'Running %d 6S jobs on %d processors',
             len(jobs), nprocs)
     output = []
