@@ -8,7 +8,6 @@ dependencies:
     - numexpr
     - scipy
     - pandas
-    - tqdm
     - click
     - ruamel.yaml
     - Py6S

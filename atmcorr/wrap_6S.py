@@ -4,7 +4,6 @@ import multiprocessing
 
 import numpy as np
 import scipy.ndimage
-import tqdm
 from Py6S import SixS
 from Py6S import AtmosProfile
 from Py6S import AeroProfile
@@ -200,11 +199,7 @@ def get_correction_params(
             len(jobs), nprocs)
     output = []
     mysixs = None
-    for res in tqdm.tqdm(
-            pool.imap(run_sixs, jobs),
-            desc='Getting correction parameters',
-            unit='band',
-            total=len(jobs)):
+    for res in pool.imap(run_sixs, jobs):
         output.append(res[0])
         mysixs = res[1]
     pool.close()
@@ -245,7 +240,7 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
 
     reflectance = np.full(data.shape, np.nan, dtype='f4')
 
-    for i in tqdm.trange(nbands, desc='Atmospheric correction', unit='band'):
+    for i in range(nbands):
         corrparams_band = corrparams[i]
         # Read uncorrected radiometric data and correct
         radiance = data[i]
@@ -285,8 +280,8 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
 
     # Perform adjecency correction if required
     if adjCorr:
-        logger.info('Adjacency correction')
-        for i in tqdm.trange(nbands, desc='adjcorr', unit='band'):
+        logger.info('Performing adjacency correction')
+        for i in range(nbands):
             reflectance[i] = adjacency_correction(
                     reflectance[i],
                     pixel_size,
