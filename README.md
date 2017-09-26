@@ -1,5 +1,5 @@
-atmospheric_correction
-----------------------
+atmcorr
+-------
 
 Wrapper for Py6S with automatic download of atmospheric
 composition from MODIS.
