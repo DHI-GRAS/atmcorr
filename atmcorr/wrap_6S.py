@@ -98,15 +98,18 @@ def setup_sixs(
     return mysixs
 
 
-def run_sixs(args):
-    """
+def run_sixs_for_wavelength(args):
+    """Run sixs for a specific wavelength
+
     Parameters
     ----------
     args : sequence
         mysixs, start_wv, end_wv, rcurve
 
-    where
-
+    Elements
+    --------
+    mysixs : SixS instance
+        initialized 6S instance
     start_wv, end_wv : float
         wave length range
     rcurve : ndarray
@@ -199,7 +202,7 @@ def get_correction_params(
             len(jobs), nprocs)
     output = []
     mysixs = None
-    for res in pool.imap(run_sixs, jobs):
+    for res in pool.imap(run_sixs_for_wavelength, jobs):
         output.append(res[0])
         mysixs = res[1]
     pool.close()
