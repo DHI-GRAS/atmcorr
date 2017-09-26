@@ -1,12 +1,14 @@
 import affine
 import numpy as np
 import rasterio.crs
+import pytest
 
 from atmospheric_correction import processing
 
 from . import testdata
 
 
+@pytest.mark.slow
 def test_workflow_artificial_data():
     band_ids = [0, 1, 2]
     nbands = len(band_ids)

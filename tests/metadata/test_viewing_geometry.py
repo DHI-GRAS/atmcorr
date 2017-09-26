@@ -4,4 +4,4 @@ from . import testdata_wv as testdata
 
 
 def test_viewing_geometry():
-    vg.get_geometry_WV2(testdata.mtdfile)
+    vg.get_geometry(sensor='WV2', mtdFile=testdata.mtdfile)
