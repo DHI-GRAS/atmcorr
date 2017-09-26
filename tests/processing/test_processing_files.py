@@ -11,6 +11,7 @@ from atmospheric_correction import processing
 import ruamel.yaml
 
 
+@pytest.mark.slow
 def test_processing_wv2():
 
     config = ruamel.yaml.safe_load(open(wv2data.DATAFILES['config.yaml']))

@@ -9,7 +9,7 @@ from . import testdata
 
 
 @pytest.mark.slow
-def test_workflow_artificial_data():
+def test_workflow_wv2():
     band_ids = [0, 1, 2]
     nbands = len(band_ids)
     ny, nx = 200, 100
