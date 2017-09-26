@@ -13,7 +13,6 @@ setup(
     atmcorr=atmcorr.scripts.atmcorr:cli
     """,
     install_requires=[
-        'tqdm',
         'rasterio',
         'numpy>=1.11.1',
         'scipy>=0.17.1',
