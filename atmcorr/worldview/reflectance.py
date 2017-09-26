@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from atmospheric_correction.worldview import calibration
+from atmcorr.worldview import calibration
 
 logger = logging.getLogger(__name__)
 

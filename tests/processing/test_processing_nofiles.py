@@ -3,7 +3,7 @@ import numpy as np
 import rasterio.crs
 import pytest
 
-from atmospheric_correction import processing
+from atmcorr import processing
 
 from . import testdata
 

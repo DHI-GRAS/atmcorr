@@ -1,6 +1,6 @@
 import numpy as np
 
-from atmospheric_correction.sentinel2 import metadata as metamod
+from atmcorr.sentinel2 import metadata as metamod
 
 
 def get_geometry(mtdFile, mtdFile_tile):

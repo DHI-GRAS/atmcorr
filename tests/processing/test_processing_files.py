@@ -7,7 +7,7 @@ try:
 except ImportError:
     pytestmark = pytest.mark.skip(reason='atmcorr_testdata not installed')
 
-from atmospheric_correction import processing
+from atmcorr import processing
 import ruamel.yaml
 
 

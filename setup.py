@@ -1,8 +1,8 @@
 from setuptools import setup, find_packages
 
 setup(
-    name='atmospheric_correction',
-    version='0.6.2',
+    name='atmcorr',
+    version='0.7',
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
@@ -10,7 +10,7 @@ setup(
     include_package_data=True,
     entry_points="""
     [console_scripts]
-    atmcorr=atmospheric_correction.scripts.atmcorr:cli
+    atmcorr=atmcorr.scripts.atmcorr:cli
     """,
     install_requires=[
         'tqdm',

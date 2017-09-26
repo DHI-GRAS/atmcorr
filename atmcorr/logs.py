@@ -41,4 +41,4 @@ def set_logger(
 
 def set_cli_logger(**kwargs):
     logging.captureWarnings(True)
-    set_logger(name='atmospheric_correction', **kwargs)
+    set_logger(name='atmcorr', **kwargs)

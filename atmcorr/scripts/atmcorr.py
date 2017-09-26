@@ -23,7 +23,7 @@ logger = logging.getLogger(__name__)
         help='Atmospheric correction config file')
 def cli(**config):
     """Run atmospheric correction"""
-    from atmospheric_correction.logs import set_cli_logger
+    from atmcorr.logs import set_cli_logger
     set_cli_logger(level='INFO')
-    from atmospheric_correction.processing import main
+    from atmcorr.processing import main
     main(**config)

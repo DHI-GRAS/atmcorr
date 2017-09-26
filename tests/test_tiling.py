@@ -1,6 +1,6 @@
 import affine
 
-from atmospheric_correction import tiling
+from atmcorr import tiling
 
 
 def test_get_tile_corners_ij():

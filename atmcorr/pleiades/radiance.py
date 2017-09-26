@@ -2,8 +2,8 @@ import logging
 
 import numpy as np
 
-from atmospheric_correction import dos
-from atmospheric_correction.pleiades import calibration
+from atmcorr import dos
+from atmcorr.pleiades import calibration
 
 logger = logging.getLogger(__name__)
 

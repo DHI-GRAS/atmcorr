@@ -1,4 +1,4 @@
-import atmospheric_correction.viewing_geometry as vg
+import atmcorr.viewing_geometry as vg
 
 from . import testdata_wv as testdata
 

@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from atmospheric_correction.sentinel2 import metadata as metamod
+from atmcorr.sentinel2 import metadata as metamod
 
 logger = logging.getLogger(__name__)
 
