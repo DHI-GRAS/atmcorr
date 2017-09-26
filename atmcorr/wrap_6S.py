@@ -50,8 +50,8 @@ _aeroProfile_names = [
 
 def setup_sixs(
         sensor,
-        AOT, PWV, ozone, rcurve,
-        aeroProfile, geometry_dict, start_wv, end_wv):
+        AOT, PWV, ozone,
+        aeroProfile, geometry_dict):
     """Set up 6S instance
 
     Parameters
@@ -60,15 +60,11 @@ def setup_sixs(
         sensor name
     AOT, PWV, ozone : float
         atmospheric constituents
-    rcurve : ndarray
-        sensor response curve
     aeroProfile : str
         name of profile
         must be attribute of Py6S.AeroProfile
     geometry_dict : dict
         from viewing_geometry
-    start_wv, end_wv : float
-        wave length range
     """
     mysixs = SixS()
 
@@ -100,12 +96,25 @@ def setup_sixs(
         key = _geometry_attrs_to_keys[attrname]
         setattr(mysixs.geometry, attrname, geometry_dict[key])
 
-    mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
     return mysixs
 
 
-def run_sixs(setup_args):
-    mysixs = setup_sixs(*setup_args)
+def run_sixs(args):
+    """
+    Parameters
+    ----------
+    args : sequence
+        mysixs, start_wv, end_wv, rcurve
+
+    where
+
+    start_wv, end_wv : float
+        wave length range
+    rcurve : ndarray
+        sensor response curve
+    """
+    mysixs, start_wv, end_wv, rcurve = args
+    mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
     mysixs.run()
     xdict = {
             'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
@@ -159,34 +168,35 @@ def get_correction_params(
     wavelength, rcurves = srcurves.get_response_curves(
             sensor, band_ids=band_ids)
     wavelength = wavelength.astype('float') / 1e3
-    start_wv = wavelength[0]
-    end_wv = wavelength[-1]
-
     # Also need to resample the band filters from 1nm to 2.5nm
     # as this is the highest spectral resolution supported by 6S
     wavelength, rcurves = srcresample.resample_response_curves(
                 wavelength, rcurves, resolution=0.0025)
 
+    start_wv = wavelength[0]
+    end_wv = wavelength[-1]
+
     geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
     nprocs = min((nprocs, len(rcurves)))
 
+    # set up SixS instance once
+    mysixs = setup_sixs(
+            sensor,
+            atm['AOT'],
+            atm['PWV'],
+            atm['ozone'],
+            aeroProfile,
+            geometry_dict)
+
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
-    jobs = [(
-        sensor,
-        atm['AOT'],
-        atm['PWV'],
-        atm['ozone'],
-        rcurve,
-        aeroProfile,
-        geometry_dict,
-        start_wv,
-        end_wv)
-        for rcurve in rcurves]
+    jobs = [
+            (mysixs, start_wv, end_wv, rcurve)
+            for rcurve in rcurves]
 
     logger.info(
-            'Running %d atmospheric correction jobs on %d processors',
+            'Running %d 6S jobs on %d processors',
             len(jobs), nprocs)
     output = []
     mysixs = None
