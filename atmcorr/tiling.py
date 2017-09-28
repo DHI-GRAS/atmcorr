@@ -32,8 +32,8 @@ def get_tile_corners_ij(height, width, xtilesize, ytilesize):
 
     bottom = jmesh * ytilesize
     left = imesh * xtilesize
-    top = np.minimum((bottom + ytilesize - 1), ny)
-    right = np.minimum((left + xtilesize - 1), nx)
+    top = np.minimum((bottom + ytilesize - 1), (height - 1))
+    right = np.minimum((left + xtilesize - 1), (width - 1))
     # now create four corner points
     corners[:, 0, ...] = np.stack((left, bottom), axis=0)
     corners[:, 1, ...] = np.stack((left, top), axis=0)
