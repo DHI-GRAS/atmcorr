@@ -7,7 +7,6 @@ import dateutil
 import rasterio
 
 from atmcorr import wrap_6S
-from atmcorr import sensors
 from atmcorr import tiling
 from atmcorr.sensors import sensor_is
 
@@ -30,6 +29,7 @@ def main(
         sensor, mtdFile, method,
         aeroProfile, atm={},
         dnFile=None, data=None, profile=None,
+        data_is_radiance=False,
         tileSizePixels=0,
         adjCorr=True,
         aotMultiplier=1.0, nprocs=None,
@@ -108,14 +108,27 @@ def main(
         where profile is the rasterio file profile
         and data as above
     """
-    if data is not None and profile is None:
-        raise ValueError('Data and profile must be provided together.')
+    if data is not None:
+        if profile is None:
+            raise ValueError('Data and profile must be provided together.')
 
-    if data is not None and data.shape[0] != profile['count']:
-        raise ValueError(
-                'Data array must have bands as its first dimension.'
-                'Number of bands was {} but data has shape {}.'
-                .format(profile['count'], data.shape))
+        if data.shape[0] != profile['count']:
+            raise ValueError(
+                    'Data array must have bands as its first dimension.'
+                    'Number of bands was {} but data has shape {}.'
+                    .format(profile['count'], data.shape))
+
+        if sensor_is(sensor, 'L8') and not data_is_radiance:
+            raise ValueError(
+                    'Landsat 8 data must be provided as radiance. '
+                    'Consider using landsat8.radiance, which relies on rio-toa.')
+    else:
+        if sensor_is(sensor, 'L8') and not data_is_radiance:
+            dnFile = _landsat8_compute_radiance(
+                    infiles=dnFile,
+                    mtdFile=mtdFile,
+                    band_ids=band_ids)
+            data_is_radiance = True
 
     if use_modis:
         if not HAS_MODIS:
@@ -167,7 +180,7 @@ def main(
     if method == '6S':
         data = _main_6S(
                 data, profile, band_ids, sensor, date,
-                mtdFile, mtdFile_tile,
+                mtdFile, mtdFile_tile, data_is_radiance,
                 atm, kwargs_toa_radiance, tileSizePixels,
                 adjCorr, aotMultiplier, aeroProfile,
                 use_modis, modis_atm_dir, earthdata_credentials,
@@ -179,14 +192,14 @@ def main(
         else:
             doDOS = False
 
-        if sensors.sensor_is(sensor, 'S2'):
+        if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
         else:
             data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
 
-    elif method == 'RAD':
+    elif method == 'RAD' and not data_is_radiance:
         doDOS = False
         data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
 
@@ -209,7 +222,7 @@ def main(
 
 def _main_6S(
         data, profile, band_ids, sensor, date,
-        mtdFile, mtdFile_tile,
+        mtdFile, mtdFile_tile, data_is_radiance,
         atm, kwargs_toa_radiance, tileSizePixels,
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials,
@@ -217,8 +230,9 @@ def _main_6S(
 
     res = profile['transform'].a
 
-    logger.info('Computing TOA radiance ...')
-    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    if not data_is_radiance:
+        logger.info('Computing TOA radiance ...')
+        data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
@@ -337,30 +351,27 @@ def _toa_radiance(
     elif sensor_is(sensor, 'PHR'):
         from atmcorr import pleiades
         return pleiades.radiance.toa_radiance(**commonkw)
-    elif sensor_is(sensor, 'L7L8'):
-        from atmcorr import landsat8
-        return landsat8.radiance.toa_radiance(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'S2'):
         commonkw.pop('doDOS')
         from atmcorr import sentinel2
         return sentinel2.radiance.toa_radiance(mtdFile_tile=mtdFile_tile, **commonkw)
+    else:
+        raise NotImplementedError(sensor)
 
 
 def _toa_reflectance(data, mtdfile, sensor, band_ids):
     commonkw = dict(data=data, mtdfile=mtdfile)
     if sensor_is(sensor, 'WV'):
         from atmcorr import worldview
-        res = worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
+        return worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
     elif sensor_is(sensor, 'PHR'):
         from atmcorr import pleiades
-        res = pleiades.reflectance.toa_reflectance(**commonkw)
-    elif sensor_is(sensor, 'L7L8'):
-        from atmcorr import landsat8
-        res = landsat8.reflectange.toa_reflectance(**commonkw)
+        return pleiades.reflectance.toa_reflectance(**commonkw)
     elif sensor_is(sensor, 'S2'):
         from atmcorr import sentinel2
-        res = sentinel2.reflectance.toa_reflectance(**commonkw)
-    return res
+        return sentinel2.reflectance.toa_reflectance(**commonkw)
+    else:
+        raise NotImplementedError(sensor)
 
 
 def _get_sensing_date(sensor, mtdFile):
@@ -378,3 +389,19 @@ def _get_sensing_date(sensor, mtdFile):
         return sentinel2.metadata.get_date(mtdFile)
     else:
         raise ValueError('Unknown sensor.')
+
+
+def _landsat8_compute_radiance(infiles, mtdFile, band_ids, outfile=None):
+    import landsat8.radiance
+    if outfile is None:
+        if isinstance(infiles, (list, tuple)):
+            outdir = os.path.dirname(infiles[0])
+        else:
+            outdir = os.path.dirname(infiles)
+        outfile = os.path.join(outdir, 'l8_radiance.tif')
+    bands = [str(bid + 1) for bid in band_ids]
+    landsat8.radiance.rio_toa_radiance(
+            infiles=infiles,
+            outfile=outfile,
+            mtdfile=mtdFile,
+            bands=bands)

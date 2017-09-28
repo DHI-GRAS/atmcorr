@@ -1,10 +1,10 @@
-from rio_toa import radiance
+from rio_toa import reflectance
 
 from atmcorr.landsat8 import utils as l8utils
 
 
-def rio_toa_radiance(infiles, outfile, mtdfile, bands):
-    """Calculate TOA radiance
+def toa_reflectance(infiles, outfile, mtdfile, bands):
+    """Calculate TOA reflectance
 
     Parameters
     ----------
@@ -21,13 +21,13 @@ def rio_toa_radiance(infiles, outfile, mtdfile, bands):
         or bands that the URIs correspond to
     """
     bandfiles = l8utils.get_bandfiles(infiles, bands)
-    radiance.calculate_landsat_radiance(
+    reflectance.calculate_landsat_reflectance(
             src_path=bandfiles,
             src_mtl=mtdfile,
             dst_path=outfile,
             rescale_factor=None,
             creation_options={},
-            band=bands,
+            bands=bands,
             dst_dtype='float32',
             processes=1,
-            clip=True)
+            pixel_sunangle=True)
