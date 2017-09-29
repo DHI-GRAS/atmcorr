@@ -93,7 +93,9 @@ def setup_sixs(
     mysixs.geometry = Geometry.User()
     for attrname in GEOMETRY_ATTRS:
         key = GEOMETRY_ATTRS[attrname]
-        setattr(mysixs.geometry, attrname, geometry_dict[key])
+        value = geometry_dict[key]
+        if value is not None:
+            setattr(mysixs.geometry, attrname, value)
 
     return mysixs
 
