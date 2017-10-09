@@ -328,7 +328,7 @@ def adjacency_correction(refl, pixel_size, mysixs, radius=1.0):
 
     # eq (8)
     t_d = T_dif - np.exp(-tau / u_v)
-    refl = (refl*T - adjRefl*t_d) / np.exp(-tau/u_v)
+    refl = (refl * T - adjRefl * t_d) / np.exp(-tau / u_v)
 
     # http://www.cesbio.ups-tlse.fr/multitemp/?p=2277
     # albedo = mysixs.outputs.spherical_albedo.total
@@ -337,6 +337,6 @@ def adjacency_correction(refl, pixel_size, mysixs, radius=1.0):
     # refl = (refl*T*(1-refl*albedo)/(1-adjRefl*albedo) - adjRefl*T_dif) / T_dir
 
     # Clean up
-    refl[mask] = np.NaN
     refl[refl < 0.0] = 0.0
+    refl[mask] = np.nan
     return refl
