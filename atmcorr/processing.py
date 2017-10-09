@@ -278,15 +278,19 @@ def _main_6S(
             # If MODIS atmospheric data was downloaded then use it to set
             # different atmospheric parameters for each tile
             if use_modis:
+                logger.info('Retrieving MODIS atmospheric parameters')
                 atm_modis = modis_atm.params.retrieve_parameters(
                         date=date,
                         extent=extent,
                         credentials=earthdata_credentials,
                         download_dir=modis_atm_dir)
-                atm = copy.copy(atm)
-                for key in atm_modis:
-                    if key not in atm or atm[key] is None:
-                        atm[key] = atm_modis[key]
+                logger.info(atm_modis)
+                atm = atm_modis
+                for k in atm:
+                    if atm[k] is None:
+                        raise ValueError(
+                                'One or more atm parameters could not be retrieved: {}.'
+                                .format(atm))
 
             atm['AOT'] *= aotMultiplier
             logger.debug('AOT: %s', atm['AOT'])

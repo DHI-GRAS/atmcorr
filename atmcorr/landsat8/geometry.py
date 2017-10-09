@@ -1,7 +1,11 @@
 import re
 
 
-def get_geometry(mtdFile, extent):
+def get_geometry(mtdFile, extent=None):
+    """
+
+    extent is [minX, maxY, maxX, minY]
+    """
     # read viewing gemotery from Landsat metadata file
 
     sun_elevation_regex = "\s*SUN_ELEVATION\s*=\s*(.*)\s*"
@@ -31,12 +35,13 @@ def get_geometry(mtdFile, extent):
             if match:
                 maxX = float(match.group(1))
 
+    gdict['sensor_azimuth'] = None
+
     if extent is None:
         gdict['sensor_zenith'] = 0.0
     else:
-        # extent is [minX, maxY, maxX, minY]
-        extentMiddleX = (extent[0]+extent[2])/2
-        imageMiddleX = (minX + maxX)/2
+        extentMiddleX = (extent[0] + extent[2]) / 2
+        imageMiddleX = (minX + maxX) / 2
         # L8 has 15 deg field of view so VZA ranges between 0 and 7.5 degrees
         gdict['sensor_zenith'] = abs(imageMiddleX - extentMiddleX)/(imageMiddleX - minX) * 7.5
     return gdict

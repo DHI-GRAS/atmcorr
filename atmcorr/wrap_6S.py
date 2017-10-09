@@ -28,7 +28,7 @@ except ImportError:
     logger.debug('Not using numexpr.')
 
 
-_geometry_attrs_to_keys = {
+GEOMETRY_ATTRS = {
         'solar_z': 'sun_zenith',
         'solar_a': 'sun_azimuth',
         'view_z': 'sensor_zenith',
@@ -37,7 +37,7 @@ _geometry_attrs_to_keys = {
         'month': 'month'}
 
 
-_aeroProfile_names = [
+AERO_PROFILES = [
         'NoAerosols',
         'Continental',
         'Maritime',
@@ -76,7 +76,7 @@ def setup_sixs(
     except (TypeError, AttributeError):
         raise ValueError(
                 'aeroProfile \'{}\' not recognized. Try one of {}'
-                ''.format(aeroProfile, _aeroProfile_names))
+                ''.format(aeroProfile, AERO_PROFILES))
 
     mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfile_attr)
     # get from MOD04 or MODATML2
@@ -91,9 +91,11 @@ def setup_sixs(
 
     # Set 6S geometry
     mysixs.geometry = Geometry.User()
-    for attrname in _geometry_attrs_to_keys:
-        key = _geometry_attrs_to_keys[attrname]
-        setattr(mysixs.geometry, attrname, geometry_dict[key])
+    for attrname in GEOMETRY_ATTRS:
+        key = GEOMETRY_ATTRS[attrname]
+        value = geometry_dict[key]
+        if value is not None:
+            setattr(mysixs.geometry, attrname, value)
 
     return mysixs
 
