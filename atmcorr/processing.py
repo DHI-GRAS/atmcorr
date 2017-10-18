@@ -314,7 +314,6 @@ def _main_6S(
                 correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
     logger.debug('Correction parameters: %s', correctionParams)
 
-    logger.info('Applying parameters to image')
     data = wrap_6S.perform_correction(
             data, correctionParams, pixel_size=res, adjCorr=adjCorr,
             mysixs=mysixs)

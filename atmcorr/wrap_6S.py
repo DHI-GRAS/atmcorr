@@ -14,18 +14,10 @@ import sensor_response_curves as srcurves
 import sensor_response_curves.resample as srcresample
 
 from atmcorr import utils
-from atmcorr import exception_handling
 from atmcorr import viewing_geometry as vg
 from atmcorr.adjacency_correction import adjacency_correction
 
 logger = logging.getLogger(__name__)
-
-try:
-    import numexpr as ne
-    logger.debug('Using numexpr.')
-except ImportError:
-    ne = None
-    logger.debug('Not using numexpr.')
 
 
 GEOMETRY_ATTRS = {
@@ -164,7 +156,6 @@ def get_correction_params(
     nprocs : int
         number of processors to use
     """
-    logger.info('Getting correction parameters')
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 
@@ -264,28 +255,19 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
             xc = utils.imresize(corrparams_band['xc'], radiance.shape)
 
         # Perform the atmospheric correction
-        with exception_handling.ignore_nan_warnings():
-            if ne is not None:
-                y = ne.evaluate('xa * radiance - xb')
-                mask = radiance == 0
-                y[mask] = np.nan
-                refl_band = ne.evaluate('y / (1.0 + xc * y)')
-                mask = ne.evaluate('refl_band < 0')
-                refl_band[mask] = 0
-            else:
-                y = xa * radiance
-                y -= xb
-                mask = radiance == 0
-                y[mask] = np.nan
-                denom = xc * y
-                denom += 1.0
-                refl_band = y / denom
-                refl_band[refl_band < 0] = 0
+        with np.errstate(invalid='ignore'):
+            # safe to ignore: failing elements already NaN
+            mask_nan = radiance == 0
+        y = xa * radiance - xb
+        y[mask_nan] = np.nan
+        refl_band = y / (xc * y + 1.0)
+        with np.errstate(invalid='ignore'):
+            # safe to ignore: NaN elements remain NaN
+            refl_band[refl_band < 0] = 0
         reflectance[i] = refl_band
 
     # Perform adjecency correction if required
     if adjCorr:
-        logger.info('Performing adjacency correction')
         for i in range(nbands):
             reflectance[i] = adjacency_correction(
                     reflectance[i],
