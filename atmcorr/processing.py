@@ -231,7 +231,7 @@ def _main_6S(
     res = profile['transform'].a
 
     if not data_is_radiance:
-        logger.info('Computing TOA radiance ...')
+        logger.info('Computing TOA radiance')
         data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
@@ -314,7 +314,7 @@ def _main_6S(
                 correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
     logger.debug('Correction parameters: %s', correctionParams)
 
-    logger.info('Apply parameters to image')
+    logger.info('Applying parameters to image')
     data = wrap_6S.perform_correction(
             data, correctionParams, pixel_size=res, adjCorr=adjCorr,
             mysixs=mysixs)

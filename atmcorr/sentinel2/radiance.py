@@ -40,11 +40,9 @@ def toa_radiance(data, mtdFile, mtdFile_tile, band_ids):
     irradiance = irradiance[band_ids]
 
     # Convert to radiance
-    logger.info('Radiometric correction')
     factor = irradiance * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
     radiance = data.astype('f4')
     for i in range(data.shape[0]):
         radiance[i] /= rc
         radiance[i] *= factor[i]
-    logger.info('Done with radiometric correction.')
     return radiance

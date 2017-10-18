@@ -1,11 +1,7 @@
-import logging
-
 import numpy as np
 
 from atmcorr import dos
 from atmcorr.worldview import calibration
-
-logger = logging.getLogger(__name__)
 
 
 def toa_radiance(data, mtdFile, sensor, band_ids, doDOS=False):
@@ -22,14 +18,11 @@ def toa_radiance(data, mtdFile, sensor, band_ids, doDOS=False):
 
     # perform dark object substraction
     if doDOS:
-        logger.info('DOS correction')
         dosDN = dos.do_dos(data)
-        logger.info('Done.')
     else:
         dosDN = np.zeros(nbands)
 
     # apply the radiometric correction factors to input image
-    logger.info('Radiometric correction')
     radiance = np.zeros(data.shape, dtype='f4')
     for i in range(nbands):
         rawdata = data[i]
@@ -39,5 +32,4 @@ def toa_radiance(data, mtdFile, sensor, band_ids, doDOS=False):
         gooddata[gooddata < 0] = 0
         radiance[i, good] = gooddata
 
-    logger.info('Done with radiometric correction.')
     return radiance
