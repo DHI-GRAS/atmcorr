@@ -25,4 +25,4 @@ install:
   - pip install -e .[test]
 
 script:
-    python -m pytest
+    python -m pytest -v
