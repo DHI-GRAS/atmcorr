@@ -8,7 +8,7 @@ import rasterio
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
-from atmcorr.sensors import sensor_is
+from atmcorr.sensors import sensor_is, sensor_is_any, check_sensor_supported
 
 try:
     import modis_atm.params
@@ -42,8 +42,7 @@ def main(
     Parameters
     ----------
     sensor : str
-        S2, WV2, WV3, PHR1A, PHR1B, SPOT6,
-        L7, L8, S2
+        see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
         path to mtdFile file
     method : str
@@ -108,6 +107,7 @@ def main(
         where profile is the rasterio file profile
         and data as above
     """
+    check_sensor_supported(sensor)
     if data is not None:
         if profile is None:
             raise ValueError('Data and profile must be provided together.')
@@ -347,7 +347,7 @@ def _toa_radiance(
             mtdFile=mtdFile,
             doDOS=doDOS,
             band_ids=band_ids)
-    if sensor_is(sensor, 'WV'):
+    if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
     elif sensor_is(sensor, 'PHR'):
@@ -363,7 +363,7 @@ def _toa_radiance(
 
 def _toa_reflectance(data, mtdfile, sensor, band_ids):
     commonkw = dict(data=data, mtdfile=mtdfile)
-    if sensor_is(sensor, 'WV'):
+    if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
     elif sensor_is(sensor, 'PHR'):
@@ -377,7 +377,7 @@ def _toa_reflectance(data, mtdfile, sensor, band_ids):
 
 
 def _get_sensing_date(sensor, mtdFile):
-    if sensor_is(sensor, 'WV'):
+    if sensor_is(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.metadata.get_date(mtdFile)
     elif sensor_is(sensor, 'L7L8'):
