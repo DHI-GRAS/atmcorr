@@ -377,7 +377,7 @@ def _toa_reflectance(data, mtdfile, sensor, band_ids):
 
 
 def _get_sensing_date(sensor, mtdFile):
-    if sensor_is(sensor, 'WV', 'WV_4band'):
+    if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.metadata.get_date(mtdFile)
     elif sensor_is(sensor, 'L7L8'):
