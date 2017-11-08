@@ -1,4 +1,4 @@
-from atmcorr.sensors import sensor_is
+from atmcorr.sensors import sensor_is, sensor_is_any
 
 REQUIRED_KEYS = {'sun_zenith', 'sun_azimuth', 'sensor_zenith', 'sensor_azimuth', 'month', 'day'}
 
@@ -11,7 +11,7 @@ def _check_gdict(d):
 
 
 def get_geometry(sensor, mtdFile, mtdFile_tile=None):
-    if sensor_is(sensor, 'WV'):
+    if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         gdict = worldview.geometry.get_geometry(mtdFile)
     elif sensor_is(sensor, 'PHR'):

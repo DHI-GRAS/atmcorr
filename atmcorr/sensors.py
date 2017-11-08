@@ -1,26 +1,42 @@
+SUPPORTED_SENSORS = [
+    'WV2', 'WV3', 'WV4', 'GE1',
+    'PHRA1A', 'PHRA1B', 'SPOT6',
+    'L7', 'L8', 'S2A', 'S2B']
 
-def sensor_is(sensor, key):
-    if sensor == key:
+
+def check_sensor_supported(sensor):
+    if sensor not in SUPPORTED_SENSORS:
+        raise ValueError(
+            'Sensor \'{}\' not among supported ({}).'
+            .format(sensor, SUPPORTED_SENSORS))
+
+
+def sensor_is(sensor, target):
+    if sensor == target:
         return True
     elif sensor in ['WV2', 'WV3']:
-        return key == 'WV'
+        return target == 'WV'
+    elif sensor in ['WV4', 'GE1']:
+        return target == 'WV_4band'
     elif sensor in ['PHR1A', 'PHR1B', 'SPOT6']:
-        return key == 'PHR'
+        return target == 'PHR'
     elif sensor in ['L8', 'L7']:
-        return key in ['L7L8', 'L7', 'L8']
-    elif sensor.startswith('S2'):
-        if sensor.endswith('10m'):
-            return key == 'S2_10m'
-        elif sensor.endswith('60m'):
-            return key == 'S2_60m'
-        else:
-            return key == 'S2'
+        return target in ['L7L8', 'L7', 'L8']
+    elif sensor in ['S2A', 'S2B']:
+        return target == 'S2'
     raise ValueError('Unknown sensor \'{}\'.'.format(sensor))
 
 
+def sensor_is_any(sensor, *targets):
+    res = False
+    for target in targets:
+        res = res or sensor_is(sensor, target)
+    return res
+
+
 def sensor_group_bands(sensor):
-    """Get key of sensors that have similar sets of bands"""
-    for key in ['WV', 'PHR', 'L7', 'L8', 'S2']:
-        if sensor_is(sensor, key):
-            return key
+    """Get target of sensors that have similar sets of bands"""
+    for target in ['WV', 'PHR', 'L7', 'L8', 'S2', 'WV_4band']:
+        if sensor_is(sensor, target):
+            return target
     raise ValueError('Unable to get sensor group for \'%s\'.'.format(sensor))
