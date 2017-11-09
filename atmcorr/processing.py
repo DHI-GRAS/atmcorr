@@ -32,9 +32,8 @@ def main(
         data_is_radiance=False,
         tileSizePixels=0,
         adjCorr=True,
-        aotMultiplier=1.0, nprocs=None,
+        aotMultiplier=1.0,
         mtdFile_tile=None, band_ids=None, date=None,
-        outfile=None, return_profile=False,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
         earthdata_credentials={}):
     """Main workflow function for atmospheric correction
@@ -67,9 +66,6 @@ def main(
     aotMultiplier : float
         Atmospheric Optical Depth
         scale factor
-    nprocs : int
-        number of processors to use
-        default: all available
     mtdFile_tile : str
         path to tile mtdFile
         required for S2
@@ -81,11 +77,6 @@ def main(
         image date
         will be retrieved from metadata
         if not specified
-    outfile : str
-        path to output file
-    return_profile : bool
-        when returning data,
-        also return profile
     use_modis : bool
         download atm parameters from MODIS
     modis_atm_dir : str
@@ -97,15 +88,9 @@ def main(
 
     Returns
     -------
-    None
-        if outfile is specified
-    data
-        if not return_profile
-        nodata are masked as NaN
     data, profile
-        if return_profile
+        nodata are masked as NaN
         where profile is the rasterio file profile
-        and data as above
     """
     check_sensor_supported(sensor)
     if data is not None:
@@ -183,8 +168,7 @@ def main(
                 mtdFile, mtdFile_tile, data_is_radiance,
                 atm, kwargs_toa_radiance, tileSizePixels,
                 adjCorr, aotMultiplier, aeroProfile,
-                use_modis, modis_atm_dir, earthdata_credentials,
-                nprocs)
+                use_modis, modis_atm_dir, earthdata_credentials)
 
     elif method in ['DOS', 'TOA']:
         if method == 'DOS':
@@ -208,16 +192,7 @@ def main(
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
-    logger.debug(profile)
-    if outfile is not None:
-        logger.info('Saving output to \'%s\'', outfile)
-        with rasterio.open(outfile, 'w', **profile) as dst:
-            dst.write(data)
-    else:
-        if return_profile:
-            return data, profile
-        else:
-            return data
+    return data, profile
 
 
 def _main_6S(
@@ -225,8 +200,7 @@ def _main_6S(
         mtdFile, mtdFile_tile, data_is_radiance,
         atm, kwargs_toa_radiance, tileSizePixels,
         adjCorr, aotMultiplier, aeroProfile,
-        use_modis, modis_atm_dir, earthdata_credentials,
-        nprocs):
+        use_modis, modis_atm_dir, earthdata_credentials):
 
     res = profile['transform'].a
 
@@ -303,8 +277,7 @@ def _main_6S(
                     atm=atm,
                     band_ids=band_ids,
                     aeroProfile=aeroProfile,
-                    extent=extent,
-                    nprocs=nprocs)
+                    extent=extent)
 
             nbands = len(tilecp)
             for b in range(nbands):
