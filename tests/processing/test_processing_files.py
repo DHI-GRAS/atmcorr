@@ -19,7 +19,7 @@ def test_processing_wv2():
         dnFile=wv2data.DATAFILES['dn_allbands.tif'],
         mtdFile=wv2data.DATAFILES['mtdfile.imd'])
 
-    new = processing.main(**config)
+    new, _ = processing.main(**config)
 
     with rasterio.open(wv2data.DATAFILES['out_expected.tif']) as src:
         expected = src.read()
