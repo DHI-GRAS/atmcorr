@@ -19,6 +19,7 @@ from atmcorr.adjacency_correction import adjacency_correction
 
 logger = logging.getLogger(__name__)
 
+NUM_PROCESSES = None  # default: all available
 
 GEOMETRY_ATTRS = {
         'solar_z': 'sun_zenith',
@@ -131,8 +132,7 @@ def get_correction_params(
         band_ids,
         mtdFile_tile=None,
         aeroProfile="Continental",
-        extent=None,
-        nprocs=None):
+        extent=None):
     """Get correction parameters
 
     Parameters
@@ -153,9 +153,8 @@ def get_correction_params(
         aero profile for 6S
     extent : list of float
         image extent
-    nprocs : int
-        number of processors to use
     """
+    nprocs = NUM_PROCESSES
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 

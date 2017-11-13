@@ -7,7 +7,7 @@ from atmcorr.sentinel2 import metadata as metamod
 logger = logging.getLogger(__name__)
 
 
-def toa_radiance(data, mtdFile, mtdFile_tile, band_ids):
+def toa_reflectance_to_radiance(data, mtdFile, mtdFile_tile, band_ids):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters

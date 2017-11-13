@@ -21,9 +21,19 @@ logger = logging.getLogger(__name__)
         parse_kwargs=dict(
             join_rootdir=True),
         help='Atmospheric correction config file')
-def cli(**config):
+def cli(dnFile, outfile, band_ids, **config):
     """Run atmospheric correction"""
     from atmcorr.logs import set_cli_logger
     set_cli_logger(level='INFO')
     from atmcorr.processing import main
-    main(**config)
+    import rasterio
+    readkw = {}
+    with rasterio.open(dnFile) as src:
+        if band_ids:
+            readkw.update(indexes=list(band_ids))
+        data = src.read(**readkw)
+        profile = src.profile
+    config.update(band_ids=band_ids)
+    outdata, outprofile = main(data=data, profile=profile, **config)
+    with rasterio.open(outfile, 'w', **outprofile) as dst:
+        dst.write(outdata)

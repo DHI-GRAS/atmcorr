@@ -1,33 +1,38 @@
-from rio_toa import radiance
+import numpy as np
 
-from atmcorr.landsat8 import utils as l8utils
+from satmeta.l8 import meta as l8meta
 
 
-def rio_toa_radiance(infiles, outfile, mtdfile, bands):
-    """Calculate TOA radiance
+def dn_to_radiance(data, mtdFile, band_ids=None):
+    """Compute radiance from digital numbers
 
     Parameters
     ----------
-    infiles : list of str or str
-        paths to Landsat 8 band files
-        or URIs for members in TAR file
-        or path to TAR file
-    outfile : str
-        path to save output to
-    mtdfile : str
+    data : ndarray shape (nbands, ny, nx)
+        digital numbers data
+    mtdFile : str
         path to metadata file
-    bands : list of int
-        bands to extract from TAR file
-        or bands that the URIs correspond to
+    band_ids : list of int, optional
+        band IDs (0-based index of bands) in data
+
+    Returns
+    -------
+    ndarray
+        radiance data
+
+    Source
+    ------
+    https://yceo.yale.edu/how-convert-landsat-dns-top-atmosphere-toa-reflectance
     """
-    bandfiles = l8utils.get_bandfiles(infiles, bands)
-    radiance.calculate_landsat_radiance(
-            src_path=bandfiles,
-            src_mtl=mtdfile,
-            dst_path=outfile,
-            rescale_factor=None,
-            creation_options={},
-            band=bands,
-            dst_dtype='float32',
-            processes=1,
-            clip=True)
+    if band_ids is None:
+        band_ids = slice(None, None)
+    with open(mtdFile) as fin:
+        metadata = l8meta.parse_metadata(fin)
+    rescaling = metadata['rescaling']
+    bias = np.asarray(rescaling['RADIANCE']['ADD'], 'float32')[band_ids]
+    gain = np.asarray(rescaling['RADIANCE']['MULT'], 'float32')[band_ids]
+    radiance = (
+        data.astype('float32') *
+        gain[:, np.newaxis, np.newaxis] +
+        bias[:, np.newaxis, np.newaxis])
+    return radiance

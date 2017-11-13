@@ -29,7 +29,9 @@ def test_workflow_wv2():
             nodata=0,
             count=nbands)
 
-    outdata = processing.main(
+    outdata, _ = processing.main(
+            data=data,
+            profile=profile,
             sensor='WV2',
             mtdFile=mtdFile,
             method='6S',
@@ -38,18 +40,12 @@ def test_workflow_wv2():
                 'PWV': 1.0,
                 'ozone': 0.15},
             aeroProfile='Maritime',
-            dnFile=None,
-            data=data,
-            profile=profile,
             tileSizePixels=0,
             band_ids=band_ids,
             adjCorr=True,
             aotMultiplier=1.0,
-            nprocs=None,
             mtdFile_tile=None,
             date=None,
-            outfile=None,
-            return_profile=False,
             use_modis=False,
             modis_atm_dir=None,
             earthdata_credentials={})

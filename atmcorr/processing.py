@@ -1,10 +1,10 @@
 import os
 import copy
 import logging
+import datetime
 
 import numpy as np
 import dateutil
-import rasterio
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
@@ -26,21 +26,23 @@ def main_optdict(options):
 
 
 def main(
+        data, profile,
         sensor, mtdFile, method,
         aeroProfile, atm={},
-        dnFile=None, data=None, profile=None,
-        data_is_radiance=False,
         tileSizePixels=0,
         adjCorr=True,
-        aotMultiplier=1.0, nprocs=None,
+        aotMultiplier=1.0,
         mtdFile_tile=None, band_ids=None, date=None,
-        outfile=None, return_profile=False,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
         earthdata_credentials={}):
     """Main workflow function for atmospheric correction
 
     Parameters
     ----------
+    data : ndarray, shape(nbands, ny, nx)
+        digital numbers input data
+    profile : dict
+        rasterio file profile
     sensor : str
         see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
@@ -51,15 +53,6 @@ def main(
         atmospheric parameters
     aeroProfile : str
         aero profile name
-    dnFile : str, optional
-        path to digital numbers input file
-        instead, you can also provide the data
-    data : ndarray, optional shape(nbands, ny, nx)
-        digital numbers input data
-        can be used instead of dnFile
-    profile : dict, optional
-        rasterio file profile
-        required when using data
     tileSizePixels : int
         tile size in pixels
     adjCorr : bool
@@ -67,9 +60,6 @@ def main(
     aotMultiplier : float
         Atmospheric Optical Depth
         scale factor
-    nprocs : int
-        number of processors to use
-        default: all available
     mtdFile_tile : str
         path to tile mtdFile
         required for S2
@@ -81,11 +71,6 @@ def main(
         image date
         will be retrieved from metadata
         if not specified
-    outfile : str
-        path to output file
-    return_profile : bool
-        when returning data,
-        also return profile
     use_modis : bool
         download atm parameters from MODIS
     modis_atm_dir : str
@@ -97,38 +82,13 @@ def main(
 
     Returns
     -------
-    None
-        if outfile is specified
-    data
-        if not return_profile
-        nodata are masked as NaN
     data, profile
-        if return_profile
-        where profile is the rasterio file profile
-        and data as above
+        nodata are masked as NaN
+        where profile is the modified rasterio file profile
     """
     check_sensor_supported(sensor)
-    if data is not None:
-        if profile is None:
-            raise ValueError('Data and profile must be provided together.')
 
-        if data.shape[0] != profile['count']:
-            raise ValueError(
-                    'Data array must have bands as its first dimension.'
-                    'Number of bands was {} but data has shape {}.'
-                    .format(profile['count'], data.shape))
-
-        if sensor_is(sensor, 'L8') and not data_is_radiance:
-            raise ValueError(
-                    'Landsat 8 data must be provided as radiance. '
-                    'Consider using landsat8.radiance, which relies on rio-toa.')
-    else:
-        if sensor_is(sensor, 'L8') and not data_is_radiance:
-            dnFile = _landsat8_compute_radiance(
-                    infiles=dnFile,
-                    mtdFile=mtdFile,
-                    band_ids=band_ids)
-            data_is_radiance = True
+    profile = _copy_check_profile(profile)
 
     if use_modis:
         if not HAS_MODIS:
@@ -144,15 +104,12 @@ def main(
 
     if date is None:
         date = _get_sensing_date(sensor, mtdFile)
+    elif isinstance(date, datetime.datetime):
+        pass
     else:
         date = dateutil.parser.parse(date)
 
-    if data is None:
-        with rasterio.open(dnFile) as src:
-            data = src.read()
-            profile = copy.copy(src.profile)
-
-    nbands = profile['count']
+    nbands = data.shape[0]
     if len(band_ids) != nbands:
         raise ValueError(
                 'Number of band IDs ({}) does not correspond to number of bands ({}).'
@@ -180,58 +137,40 @@ def main(
     if method == '6S':
         data = _main_6S(
                 data, profile, band_ids, sensor, date,
-                mtdFile, mtdFile_tile, data_is_radiance,
+                mtdFile, mtdFile_tile,
                 atm, kwargs_toa_radiance, tileSizePixels,
                 adjCorr, aotMultiplier, aeroProfile,
-                use_modis, modis_atm_dir, earthdata_credentials,
-                nprocs)
-
+                use_modis, modis_atm_dir, earthdata_credentials)
     elif method in ['DOS', 'TOA']:
-        if method == 'DOS':
-            doDOS = True
-        else:
-            doDOS = False
-
+        doDOS = (method == 'DOS')
         if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
         else:
             data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
-
-    elif method == 'RAD' and not data_is_radiance:
+    elif method == 'RAD':
         doDOS = False
         data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
-    logger.debug(profile)
-    if outfile is not None:
-        logger.info('Saving output to \'%s\'', outfile)
-        with rasterio.open(outfile, 'w', **profile) as dst:
-            dst.write(data)
-    else:
-        if return_profile:
-            return data, profile
-        else:
-            return data
+    return data, profile
 
 
 def _main_6S(
         data, profile, band_ids, sensor, date,
-        mtdFile, mtdFile_tile, data_is_radiance,
+        mtdFile, mtdFile_tile,
         atm, kwargs_toa_radiance, tileSizePixels,
         adjCorr, aotMultiplier, aeroProfile,
-        use_modis, modis_atm_dir, earthdata_credentials,
-        nprocs):
+        use_modis, modis_atm_dir, earthdata_credentials):
 
     res = profile['transform'].a
 
-    if not data_is_radiance:
-        data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    # convert to radiance
+    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
@@ -303,8 +242,7 @@ def _main_6S(
                     atm=atm,
                     band_ids=band_ids,
                     aeroProfile=aeroProfile,
-                    extent=extent,
-                    nprocs=nprocs)
+                    extent=extent)
 
             nbands = len(tilecp)
             for b in range(nbands):
@@ -356,7 +294,12 @@ def _toa_radiance(
     elif sensor_is(sensor, 'S2'):
         commonkw.pop('doDOS')
         from atmcorr import sentinel2
-        return sentinel2.radiance.toa_radiance(mtdFile_tile=mtdFile_tile, **commonkw)
+        return sentinel2.radiance.toa_reflectance_to_radiance(
+            mtdFile_tile=mtdFile_tile, **commonkw)
+    elif sensor_is(sensor, 'L8'):
+        commonkw.pop('doDOS')
+        from atmcorr import landsat8
+        return landsat8.radiance.dn_to_radiance(**commonkw)
     else:
         raise NotImplementedError(sensor)
 
@@ -374,6 +317,16 @@ def _toa_reflectance(data, mtdfile, sensor, band_ids):
         return sentinel2.reflectance.toa_reflectance(**commonkw)
     else:
         raise NotImplementedError(sensor)
+
+
+def _copy_check_profile(profile):
+    profile = copy.deepcopy(profile)
+    required = {'nodata', 'transform', 'crs'}
+    missing = required - set(profile)
+    if missing:
+        raise ValueError(
+            'Metadata dict `profile` is missing information: \'{}\''.format(missing))
+    return profile
 
 
 def _get_sensing_date(sensor, mtdFile):
