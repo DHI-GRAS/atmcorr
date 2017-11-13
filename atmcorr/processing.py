@@ -29,7 +29,6 @@ def main(
         data, profile,
         sensor, mtdFile, method,
         aeroProfile, atm={},
-        data_is_radiance=False,
         tileSizePixels=0,
         adjCorr=True,
         aotMultiplier=1.0,
@@ -138,7 +137,7 @@ def main(
     if method == '6S':
         data = _main_6S(
                 data, profile, band_ids, sensor, date,
-                mtdFile, mtdFile_tile, data_is_radiance,
+                mtdFile, mtdFile_tile,
                 atm, kwargs_toa_radiance, tileSizePixels,
                 adjCorr, aotMultiplier, aeroProfile,
                 use_modis, modis_atm_dir, earthdata_credentials)
@@ -150,7 +149,7 @@ def main(
         else:
             data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
-    elif method == 'RAD' and not data_is_radiance:
+    elif method == 'RAD':
         doDOS = False
         data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
     else:
@@ -163,15 +162,15 @@ def main(
 
 def _main_6S(
         data, profile, band_ids, sensor, date,
-        mtdFile, mtdFile_tile, data_is_radiance,
+        mtdFile, mtdFile_tile,
         atm, kwargs_toa_radiance, tileSizePixels,
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
     res = profile['transform'].a
 
-    if not data_is_radiance:
-        data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    # convert to radiance
+    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
