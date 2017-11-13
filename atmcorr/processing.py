@@ -1,10 +1,10 @@
 import os
 import copy
 import logging
+import datetime
 
 import numpy as np
 import dateutil
-import rasterio
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
@@ -26,9 +26,9 @@ def main_optdict(options):
 
 
 def main(
+        data, profile,
         sensor, mtdFile, method,
         aeroProfile, atm={},
-        dnFile=None, data=None, profile=None,
         data_is_radiance=False,
         tileSizePixels=0,
         adjCorr=True,
@@ -40,6 +40,10 @@ def main(
 
     Parameters
     ----------
+    data : ndarray, shape(nbands, ny, nx)
+        digital numbers input data
+    profile : dict
+        rasterio file profile
     sensor : str
         see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
@@ -50,15 +54,6 @@ def main(
         atmospheric parameters
     aeroProfile : str
         aero profile name
-    dnFile : str, optional
-        path to digital numbers input file
-        instead, you can also provide the data
-    data : ndarray, optional shape(nbands, ny, nx)
-        digital numbers input data
-        can be used instead of dnFile
-    profile : dict, optional
-        rasterio file profile
-        required when using data
     tileSizePixels : int
         tile size in pixels
     adjCorr : bool
@@ -90,30 +85,11 @@ def main(
     -------
     data, profile
         nodata are masked as NaN
-        where profile is the rasterio file profile
+        where profile is the modified rasterio file profile
     """
     check_sensor_supported(sensor)
-    if data is not None:
-        if profile is None:
-            raise ValueError('Data and profile must be provided together.')
 
-        if data.shape[0] != profile['count']:
-            raise ValueError(
-                    'Data array must have bands as its first dimension.'
-                    'Number of bands was {} but data has shape {}.'
-                    .format(profile['count'], data.shape))
-
-        if sensor_is(sensor, 'L8') and not data_is_radiance:
-            raise ValueError(
-                    'Landsat 8 data must be provided as radiance. '
-                    'Consider using landsat8.radiance, which relies on rio-toa.')
-    else:
-        if sensor_is(sensor, 'L8') and not data_is_radiance:
-            dnFile = _landsat8_compute_radiance(
-                    infiles=dnFile,
-                    mtdFile=mtdFile,
-                    band_ids=band_ids)
-            data_is_radiance = True
+    profile = _copy_check_profile(profile)
 
     if use_modis:
         if not HAS_MODIS:
@@ -129,15 +105,12 @@ def main(
 
     if date is None:
         date = _get_sensing_date(sensor, mtdFile)
+    elif isinstance(date, datetime.datetime):
+        pass
     else:
         date = dateutil.parser.parse(date)
 
-    if data is None:
-        with rasterio.open(dnFile) as src:
-            data = src.read()
-            profile = copy.copy(src.profile)
-
-    nbands = profile['count']
+    nbands = data.shape[0]
     if len(band_ids) != nbands:
         raise ValueError(
                 'Number of band IDs ({}) does not correspond to number of bands ({}).'
@@ -169,24 +142,17 @@ def main(
                 atm, kwargs_toa_radiance, tileSizePixels,
                 adjCorr, aotMultiplier, aeroProfile,
                 use_modis, modis_atm_dir, earthdata_credentials)
-
     elif method in ['DOS', 'TOA']:
-        if method == 'DOS':
-            doDOS = True
-        else:
-            doDOS = False
-
+        doDOS = (method == 'DOS')
         if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
         else:
             data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
             data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
-
     elif method == 'RAD' and not data_is_radiance:
         doDOS = False
         data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
@@ -329,7 +295,8 @@ def _toa_radiance(
     elif sensor_is(sensor, 'S2'):
         commonkw.pop('doDOS')
         from atmcorr import sentinel2
-        return sentinel2.radiance.toa_radiance(mtdFile_tile=mtdFile_tile, **commonkw)
+        return sentinel2.radiance.toa_reflectance_to_radiance(
+            mtdFile_tile=mtdFile_tile, **commonkw)
     else:
         raise NotImplementedError(sensor)
 
@@ -347,6 +314,16 @@ def _toa_reflectance(data, mtdfile, sensor, band_ids):
         return sentinel2.reflectance.toa_reflectance(**commonkw)
     else:
         raise NotImplementedError(sensor)
+
+
+def _copy_check_profile(profile):
+    profile = copy.deepcopy(profile)
+    required = {'nodata', 'transform', 'crs'}
+    missing = set(profile) - required
+    if missing:
+        raise ValueError(
+            'Metadata dict `profile` is missing information: \'{}\''.format(missing))
+    return profile
 
 
 def _get_sensing_date(sensor, mtdFile):
