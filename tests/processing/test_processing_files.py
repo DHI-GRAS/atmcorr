@@ -16,10 +16,12 @@ def test_processing_wv2():
 
     config = ruamel.yaml.safe_load(open(wv2data.DATAFILES['config.yaml']))
     config.update(
-        dnFile=wv2data.DATAFILES['dn_allbands.tif'],
         mtdFile=wv2data.DATAFILES['mtdfile.imd'])
 
-    new, _ = processing.main(**config)
+    with rasterio.open(wv2data.DATAFILES['dn_allbands.tif']) as src:
+        data = src.read()
+        profile = src.profile
+    new, _ = processing.main(data=data, profile=profile, **config)
 
     with rasterio.open(wv2data.DATAFILES['out_expected.tif']) as src:
         expected = src.read()

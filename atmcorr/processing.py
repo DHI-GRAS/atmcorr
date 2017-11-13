@@ -318,7 +318,7 @@ def _toa_reflectance(data, mtdfile, sensor, band_ids):
 def _copy_check_profile(profile):
     profile = copy.deepcopy(profile)
     required = {'nodata', 'transform', 'crs'}
-    missing = set(profile) - required
+    missing = required - set(profile)
     if missing:
         raise ValueError(
             'Metadata dict `profile` is missing information: \'{}\''.format(missing))
