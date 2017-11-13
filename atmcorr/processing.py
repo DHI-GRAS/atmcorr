@@ -296,6 +296,10 @@ def _toa_radiance(
         from atmcorr import sentinel2
         return sentinel2.radiance.toa_reflectance_to_radiance(
             mtdFile_tile=mtdFile_tile, **commonkw)
+    elif sensor_is(sensor, 'L8'):
+        commonkw.pop('doDOS')
+        from atmcorr import landsat8
+        return landsat8.radiance.dn_to_radiance(**commonkw)
     else:
         raise NotImplementedError(sensor)
 
