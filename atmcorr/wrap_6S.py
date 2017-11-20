@@ -14,7 +14,6 @@ import sensor_response_curves as srcurves
 import sensor_response_curves.resample as srcresample
 
 from atmcorr import utils
-from atmcorr import viewing_geometry as vg
 from atmcorr.adjacency_correction import adjacency_correction
 
 logger = logging.getLogger(__name__)
@@ -127,32 +126,23 @@ def run_sixs_for_wavelength(args):
 
 def get_correction_params(
         sensor,
-        mtdFile,
         atm,
         band_ids,
-        mtdFile_tile=None,
-        aeroProfile="Continental",
-        extent=None):
+        geometry_dict,
+        aeroProfile="Continental"):
     """Get correction parameters
 
     Parameters
     ----------
     sensor : str
         sensor name
-    mtdFile : str
-        path to metadata file
     atm : dict
         atmospheric parameters
     band_ids : list of int
         bands in input data
         0-based index wrt. original product
-    mtdFile_tile : str
-        path to tile metadata file
-        required for Sentinel 2
     aeroProfile : str
         aero profile for 6S
-    extent : list of float
-        image extent
     """
     nprocs = NUM_PROCESSES
     if nprocs is None:
@@ -169,8 +159,6 @@ def get_correction_params(
 
     start_wv = wavelength[0]
     end_wv = wavelength[-1]
-
-    geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
 
     nprocs = min((nprocs, len(rcurves)))
 

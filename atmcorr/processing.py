@@ -8,7 +8,10 @@ import dateutil
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
-from atmcorr.sensors import sensor_is, sensor_is_any, check_sensor_supported
+from atmcorr.sensors import sensor_is
+from atmcorr.sensors import sensor_is_any
+from atmcorr.sensors import check_sensor_supported
+from atmcorr import viewing_geometry as vg
 
 try:
     import modis_atm.params
@@ -235,14 +238,14 @@ def _main_6S(
             logger.debug('Water Vapour: %s', atm['PWV'])
             logger.debug('Ozone: %s', atm['ozone'])
 
+            geometry_dict = vg.get_geometry(sensor, mtdFile, mtdFile_tile)
+
             mysixs, tilecp = wrap_6S.get_correction_params(
-                    sensor=sensor,
-                    mtdFile=mtdFile,
-                    mtdFile_tile=mtdFile_tile,
-                    atm=atm,
-                    band_ids=band_ids,
-                    aeroProfile=aeroProfile,
-                    extent=extent)
+                sensor=sensor,
+                atm=atm,
+                band_ids=band_ids,
+                geometry_dict=geometry_dict,
+                aeroProfile=aeroProfile)
 
             nbands = len(tilecp)
             for b in range(nbands):
