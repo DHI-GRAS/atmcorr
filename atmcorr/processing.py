@@ -182,18 +182,18 @@ def _main_6S(
 
     if tileSizePixels > 0:
         tilegrid_kw = dict(
-                xtilesize=tileSizePixels,
-                ytilesize=tileSizePixels)
+            xtilesize=tileSizePixels,
+            ytilesize=tileSizePixels)
     else:
         tilegrid_kw = dict(
-                xtilesize=width,
-                ytilesize=height)
+            xtilesize=width,
+            ytilesize=height)
     tile_extents = tiling.get_tile_extents(
-            height=height,
-            width=width,
-            src_transform=profile['transform'],
-            src_crs=profile['crs'],
-            **tilegrid_kw)
+        height=height,
+        width=width,
+        src_transform=profile['transform'],
+        src_crs=profile['crs'],
+        **tilegrid_kw)
     if tile_extents.shape == ():
         tile_extents = tile_extents.reshape((1, 1))
 
@@ -202,8 +202,8 @@ def _main_6S(
     # of the three correction parameters
     njtiles, nitiles = tile_extents.shape
     correctionParams = np.zeros(
-            (nbands, njtiles, nitiles),
-            dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+        (nbands, njtiles, nitiles),
+        dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
 
     nruns = njtiles * nitiles
     if nruns > 1 and adjCorr:
@@ -221,10 +221,10 @@ def _main_6S(
             if use_modis:
                 logger.info('Retrieving MODIS atmospheric parameters')
                 atm_modis = modis_atm.params.retrieve_parameters(
-                        date=date,
-                        extent=extent,
-                        credentials=earthdata_credentials,
-                        download_dir=modis_atm_dir)
+                    date=date,
+                    extent=extent,
+                    credentials=earthdata_credentials,
+                    download_dir=modis_atm_dir)
                 logger.info(atm_modis)
                 atm = atm_modis
                 for k in atm:
@@ -284,10 +284,10 @@ def _toa_radiance(
         required for Sentinel 2
     """
     commonkw = dict(
-            data=data,
-            mtdFile=mtdFile,
-            doDOS=doDOS,
-            band_ids=band_ids)
+        data=data,
+        mtdFile=mtdFile,
+        doDOS=doDOS,
+        band_ids=band_ids)
     if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
@@ -359,7 +359,7 @@ def _landsat8_compute_radiance(infiles, mtdFile, band_ids, outfile=None):
         outfile = os.path.join(outdir, 'l8_radiance.tif')
     bands = [str(bid + 1) for bid in band_ids]
     landsat8.radiance.rio_toa_radiance(
-            infiles=infiles,
-            outfile=outfile,
-            mtdfile=mtdFile,
-            bands=bands)
+        infiles=infiles,
+        outfile=outfile,
+        mtdfile=mtdFile,
+        bands=bands)
