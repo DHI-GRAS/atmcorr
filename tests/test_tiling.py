@@ -1,54 +1,45 @@
 import affine
+import numpy as np
 
 from atmcorr import tiling
 
 
-def test_get_tile_corners_ij():
-    corners = tiling.get_tile_corners_ij(height=1000, width=2000, xtilesize=100, ytilesize=100)
-    assert corners.shape == (2, 4, 10, 20)
+def test_get_tiled_transform_shape():
+    src_res = 10
+    src_transform = affine.Affine(src_res, 0, 36000, 0, -src_res, 18000)
+    src_shape = (1000, 2000)
+    dst_res = src_res * 10
+    dst_transform, dst_shape = tiling.get_tiled_transform_shape(src_transform, src_shape, dst_res)
+    expected_transform = src_transform * affine.Affine(10, 0, 0, 0, 10, 0)
+    assert dst_transform == expected_transform
+    assert dst_shape == (100, 200)
 
 
-def test_get_tile_corners_ij_round():
-    corners = tiling.get_tile_corners_ij(height=999, width=1999, xtilesize=100, ytilesize=100)
-    assert corners.shape == (2, 4, 10, 20)
-
-
-def test_transform_corners():
-    corners = tiling.get_tile_corners_ij(height=1000, width=2000, xtilesize=100, ytilesize=100)
-    lon, lat = tiling.transform_corners(
-            corners,
-            src_transform=affine.Affine(10, 0, 36000, 0, 10, 18000),
-            src_crs={'init': 'epsg:4032'})
-    assert lon.shape == (4, 10, 20)
-
-
-def test_get_tile_extents():
-    extent_rec = tiling.get_tile_extents(
-            height=1000,
-            width=2000,
-            xtilesize=100,
-            ytilesize=100,
-            src_transform=affine.Affine(10, 0, 36000, 0, 10, 18000),
-            src_crs={'init': 'epsg:4032'})
-    assert extent_rec.shape == (10, 20)
+def test_get_projected_extents():
+    extent_rec = tiling.get_projected_extents(
+        transform=affine.Affine(10, 0, 36000, 0, -10, 18000),
+        height=100,
+        width=200,
+        src_crs={'init': 'epsg:4032'})
+    assert extent_rec.shape == (100, 200)
     assert 'xmin' in extent_rec.dtype.names
 
 
-def test_get_tile_extents_single_tile():
-    extent_rec = tiling.get_tile_extents(
-            height=1000,
-            width=2000,
-            xtilesize=2000,
-            ytilesize=1000,
-            src_transform=affine.Affine(10, 0, 36000, 0, 10, 18000),
-            src_crs={'init': 'epsg:4032'})
-    assert extent_rec.shape == (1, 1)
-
-
-def test_corners_from_bounds():
+def test_bounds_to_projected_extents():
     bounds = (364466.0808031342, 2829605.9090107735, 365034.0808031342, 2836767.9090107735)
     src_crs = {'init': 'epsg:32640'}
-    extent_rec = tiling.extents_from_bounds(*bounds, src_crs=src_crs)
+    extent_rec = tiling.bounds_to_projected_extents(*bounds, src_crs=src_crs)
     assert extent_rec.shape == ()
     assert 'xmin' in extent_rec.dtype.names
     assert extent_rec['xmin']
+
+
+def test_recarr_take_dict():
+    a = tiling.get_projected_extents(
+        transform=affine.Affine(10, 0, 36000, 0, -10, 18000),
+        height=100,
+        width=200,
+        src_crs={'init': 'epsg:4032'})
+    d = tiling.recarr_take_dict(a, 0, 0)
+    assert type(d) == dict
+    assert np.issubdtype(d['xmin'], np.float)
