@@ -2,7 +2,7 @@ import logging
 
 import numpy as np
 
-from atmcorr.sentinel2 import metadata as metamod
+import satmeta.s2.meta as s2meta
 
 logger = logging.getLogger(__name__)
 
@@ -29,13 +29,12 @@ def toa_reflectance_to_radiance(data, mtdFile, mtdFile_tile, band_ids):
     if mtdFile_tile is None:
         raise ValueError('Tile metadata file required!')
 
-    metadata = metamod.parse_mtdfile(mtdFile, mtdFile_tile=mtdFile_tile)
-    tile = list(metadata['granules'])[0]
-    logger.debug('Tile is \'%s\'.', tile)
-    rc = metadata['reflectance_conversion']
-    qv = metadata['quantification_value']
-    irradiance = np.array(metadata['irradiance_values'])
-    sun_zenith = metadata['granules'][tile]['sun_zenith']
+    meta = s2meta.parse_metadata(mtdFile)
+    gmeta = s2meta.parse_granule_metadata(mtdFile_tile)
+    rc = meta['reflectance_conversion']
+    qv = meta['quantification_value']
+    irradiance = np.array(meta['irradiance_values'])
+    sun_zenith = gmeta['sun_zenith']
 
     irradiance = irradiance[band_ids]
 
