@@ -246,13 +246,14 @@ def _main_6S(
                             .format(atm))
 
             if tiling_shape == (1, 1):
+                # get angles for whole image
+                geometry_dict_tile = geometry_dict
+            else:
+                # get angles for this tile
                 geometry_dict_tile = {}
-                # get pixel angles
                 for key, value in geometry_dict.items():
                     geometry_dict_tile[key] = (
                         value[j, i] if isinstance(value, np.ndarray) else value)
-            else:
-                geometry_dict_tile = geometry_dict
 
             atm['AOT'] *= aotMultiplier
             logger.debug('AOT: %s', atm['AOT'])
