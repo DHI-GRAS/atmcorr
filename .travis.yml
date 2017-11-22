@@ -26,4 +26,4 @@ install:
   - pip install -e .[test]
 
 script:
-    python -m pytest -v
+    python -m pytest -v --runslow
