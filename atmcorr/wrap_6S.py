@@ -10,9 +10,6 @@ from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
 
-import sensor_response_curves as srcurves
-import sensor_response_curves.resample as srcresample
-
 from atmcorr import utils
 from atmcorr.adjacency_correction import adjacency_correction
 
@@ -127,7 +124,7 @@ def run_sixs_for_wavelength(args):
 def get_correction_params(
         sensor,
         atm,
-        band_ids,
+        rcurves_dict,
         geometry_dict,
         aeroProfile="Continental"):
     """Get correction parameters
@@ -138,9 +135,10 @@ def get_correction_params(
         sensor name
     atm : dict
         atmospheric parameters
-    band_ids : list of int
-        bands in input data
-        0-based index wrt. original product
+    rcurves_dict : dict
+        sensor response curve parameters
+    geometry_dict : dict
+        viewing / Sun angles parameters
     aeroProfile : str
         aero profile for 6S
     """
@@ -148,19 +146,7 @@ def get_correction_params(
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
 
-    # Set 6S band filters
-    wavelength, rcurves = srcurves.get_response_curves(
-            sensor, band_ids=band_ids)
-    wavelength = wavelength.astype('float') / 1e3
-    # Also need to resample the band filters from 1nm to 2.5nm
-    # as this is the highest spectral resolution supported by 6S
-    wavelength, rcurves = srcresample.resample_response_curves(
-                wavelength, rcurves, resolution=0.0025)
-
-    start_wv = wavelength[0]
-    end_wv = wavelength[-1]
-
-    nprocs = min((nprocs, len(rcurves)))
+    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
 
     # set up SixS instance once
     mysixs = setup_sixs(
@@ -174,9 +160,8 @@ def get_correction_params(
     # Run 6S for each spectral band
     pool = multiprocessing.Pool(nprocs)
     jobs = [
-            (mysixs, start_wv, end_wv, rcurve)
-            for rcurve in rcurves]
-
+            (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
+            for rcurve in rcurves_dict['rcurves']]
     logger.debug(
             'Running %d 6S jobs on %d processors',
             len(jobs), nprocs)

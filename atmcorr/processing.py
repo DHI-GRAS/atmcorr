@@ -11,7 +11,8 @@ from atmcorr import tiling
 from atmcorr.sensors import sensor_is
 from atmcorr.sensors import sensor_is_any
 from atmcorr.sensors import check_sensor_supported
-from atmcorr import viewing_geometry as vg
+from atmcorr import viewing_geometry
+from atmcorr import response_curves
 
 try:
     import modis_atm.params
@@ -173,8 +174,6 @@ def _main_6S(
     if tileSize and adjCorr:
         raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
 
-    res = profile['transform'].a
-
     # convert to radiance
     data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
@@ -189,7 +188,6 @@ def _main_6S(
             transform=tiling_transform,
             height=tiling_shape[0], width=tiling_shape[1],
             src_crs=profile['crs'])
-        tiled = True
     else:
         tile_extents_wgs = tiling.get_projected_image_extent(
             transform=profile['transform'],
@@ -197,13 +195,14 @@ def _main_6S(
             src_crs=profile['crs'])
         tiling_transform = None
         tiling_shape = (1, 1)
-        tiled = False
 
-    geometry_dict = vg.get_geometry(
+    geometry_dict = viewing_geometry.get_geometry(
         sensor, mtdFile,
         mtdFile_tile=mtdFile_tile,
         dst_transform=tiling_transform,
         dst_shape=tiling_shape)
+
+    rcurves_dict = response_curves.get_response_curves(sensor, band_ids)
 
     # Structure holding the 6S correction parameters has, for each band in
     # the image, arrays of values (one for each tile)
@@ -237,8 +236,9 @@ def _main_6S(
                             'One or more atm parameters could not be retrieved: {}.'
                             .format(atm))
 
-            if tiled:
+            if tiling_shape == (1, 1):
                 geometry_dict_tile = {}
+                # get pixel angles
                 for key, value in geometry_dict.items():
                     geometry_dict_tile[key] = (
                         value[j, i] if isinstance(value, np.ndarray) else value)
@@ -253,8 +253,8 @@ def _main_6S(
             mysixs, tilecp = wrap_6S.get_correction_params(
                 sensor=sensor,
                 atm=atm,
-                band_ids=band_ids,
                 geometry_dict=geometry_dict_tile,
+                rcurves_dict=rcurves_dict,
                 aeroProfile=aeroProfile)
 
             nbands = len(tilecp)
@@ -265,8 +265,10 @@ def _main_6S(
     logger.debug('Correction parameters: %s', correctionParams)
 
     data = wrap_6S.perform_correction(
-            data, correctionParams, pixel_size=res, adjCorr=adjCorr,
-            mysixs=mysixs)
+        data, correctionParams,
+        pixel_size=profile['transform'].a,
+        adjCorr=adjCorr,
+        mysixs=mysixs)
 
     return data
 
