@@ -2,6 +2,7 @@ import os
 import copy
 import logging
 import datetime
+import multiprocessing
 
 import numpy as np
 import dateutil
@@ -23,6 +24,8 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
+
+NUM_PROCESSES = None  # default: all available
 
 
 def main_optdict(options):
@@ -211,6 +214,12 @@ def _main_6S(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
 
+    nprocs = NUM_PROCESSES
+    if nprocs is None:
+        nprocs = multiprocessing.cpu_count()
+    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
+    processor_pool = multiprocessing.Pool(nprocs)
+
     # Get 6S correction parameters for an extent of each tile
     atm_orig = copy.copy(atm)
     mysixs = None
@@ -251,6 +260,7 @@ def _main_6S(
             logger.debug('Ozone: %s', atm['ozone'])
 
             mysixs, tilecp = wrap_6S.get_correction_params(
+                processor_pool=processor_pool,
                 sensor=sensor,
                 atm=atm,
                 geometry_dict=geometry_dict_tile,
@@ -262,6 +272,8 @@ def _main_6S(
                 correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
                 correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
                 correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
+    processor_pool.close()
+    processor_pool.join()
     logger.debug('Correction parameters: %s', correctionParams)
 
     data = wrap_6S.perform_correction(

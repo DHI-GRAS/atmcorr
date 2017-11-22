@@ -1,6 +1,5 @@
 from __future__ import division
 import logging
-import multiprocessing
 
 import numpy as np
 from Py6S import SixS
@@ -14,8 +13,6 @@ from atmcorr import utils
 from atmcorr.adjacency_correction import adjacency_correction
 
 logger = logging.getLogger(__name__)
-
-NUM_PROCESSES = None  # default: all available
 
 GEOMETRY_ATTRS = {
         'solar_z': 'sun_zenith',
@@ -122,6 +119,7 @@ def run_sixs_for_wavelength(args):
 
 
 def get_correction_params(
+        processor_pool,
         sensor,
         atm,
         rcurves_dict,
@@ -131,6 +129,8 @@ def get_correction_params(
 
     Parameters
     ----------
+    processor_pool : multiprocessing.Pool
+        processor pool
     sensor : str
         sensor name
     atm : dict
@@ -142,12 +142,6 @@ def get_correction_params(
     aeroProfile : str
         aero profile for 6S
     """
-    nprocs = NUM_PROCESSES
-    if nprocs is None:
-        nprocs = multiprocessing.cpu_count()
-
-    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
-
     # set up SixS instance once
     mysixs = setup_sixs(
             sensor,
@@ -158,20 +152,14 @@ def get_correction_params(
             geometry_dict)
 
     # Run 6S for each spectral band
-    pool = multiprocessing.Pool(nprocs)
     jobs = [
             (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
             for rcurve in rcurves_dict['rcurves']]
-    logger.debug(
-            'Running %d 6S jobs on %d processors',
-            len(jobs), nprocs)
     output = []
     mysixs = None
-    for res in pool.imap(run_sixs_for_wavelength, jobs):
+    for res in processor_pool.imap(run_sixs_for_wavelength, jobs):
         output.append(res[0])
         mysixs = res[1]
-    pool.close()
-    pool.join()
     return mysixs, output
 
 
