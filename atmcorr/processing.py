@@ -187,15 +187,21 @@ def _main_6S(
             src_transform=profile['transform'], src_shape=(height, width), dst_res=tileSize)
         tile_extents_wgs = tiling.get_projected_extents(
             transform=tiling_transform,
-            height=tiling_shape[0], width=tiling_shape[1])
+            height=tiling_shape[0], width=tiling_shape[1],
+            src_crs=profile['crs'])
         tiled = True
     else:
-        tiling_transform = None, None
+        tile_extents_wgs = tiling.get_projected_image_extent(
+            transform=profile['transform'],
+            height=height, width=width,
+            src_crs=profile['crs'])
+        tiling_transform = None
         tiling_shape = (1, 1)
         tiled = False
 
     geometry_dict = vg.get_geometry(
-        sensor, mtdFile, mtdFile_tile,
+        sensor, mtdFile,
+        mtdFile_tile=mtdFile_tile,
         dst_transform=tiling_transform,
         dst_shape=tiling_shape)
 

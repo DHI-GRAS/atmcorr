@@ -94,7 +94,7 @@ def _corners_to_extents(xs, ys):
     Parameters
     ----------
     xs, ys : ndarray shape(N, ...)
-        x and y coordinates
+        x and y coordinates of N corners
 
     Returns
     -------
@@ -128,8 +128,8 @@ def get_projected_extents(transform, height, width, src_crs, dst_crs={'init': 'e
         xmin, xmax, ymin, ymax
     """
     corners = _get_corner_coordinates(transform, height, width)
-    lon, lat = _transform_corners(corners, src_crs, dst_crs=dst_crs)
-    return _corners_to_extents(lon, lat)
+    xproj, yproj = _transform_corners(corners, src_crs, dst_crs=dst_crs)
+    return _corners_to_extents(xproj, yproj)
 
 
 def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs={'init': 'epsg:4326'}):
@@ -141,13 +141,44 @@ def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs={'ini
         extents
     src_crs, dst_crs : dict
         source and destination coordinate reference systems
+
+    Returns
+    -------
+    np.recarray shape (1, 1)
+        with names xmin, xmax, ymin, ymax
     """
     src_proj = pyproj.Proj(src_crs)
     dst_proj = pyproj.Proj(dst_crs)
-    xs = [left, left, right, right]
-    ys = [bottom, top, top, bottom]
-    xout, yout = pyproj.transform(src_proj, dst_proj, xs, ys)
-    return _corners_to_extents(xs, ys)
+    xs = np.array([left, left, right, right])
+    ys = np.array([bottom, top, top, bottom])
+    xproj, yproj = pyproj.transform(src_proj, dst_proj, xs, ys)
+    return _corners_to_extents(xproj, yproj)[np.newaxis, np.newaxis]
+
+
+def get_projected_image_extent(transform, height, width, src_crs, dst_crs={'init': 'epsg:4326'}):
+    """Get extents of a whole image in WGS84 or other projection
+
+    Parameters
+    ----------
+    transform : affine.Affine
+        image transform
+    height, width : int
+        image shape
+    src_crs : dict or rasterio.crs.CRS
+        source coordinate reference system
+    dst_crs : dict or rasterio.crs.CRS
+        destination coordinate reference system
+        default: WGS84 (lon, lat)
+
+    Returns
+    -------
+    np.recarray shape (1, 1)
+        with names xmin, xmax, ymin, ymax
+    """
+    left, top = transform * (0, 0)
+    right, bottom = transform * (height, width)
+    return bounds_to_projected_extents(
+        left, bottom, right, top, src_crs, dst_crs=dst_crs)
 
 
 def recarr_take_dict(a, *idx):

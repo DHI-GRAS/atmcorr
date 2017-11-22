@@ -40,7 +40,7 @@ def test_workflow_wv2():
                 'PWV': 1.0,
                 'ozone': 0.15},
             aeroProfile='Maritime',
-            tileSizePixels=0,
+            tileSize=0,
             band_ids=band_ids,
             adjCorr=True,
             aotMultiplier=1.0,
