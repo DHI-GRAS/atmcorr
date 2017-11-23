@@ -10,7 +10,7 @@ def _check_gdict(d):
                 'Geometry dict is lacking the following keys: {}'.format(REQUIRED_KEYS - dkeys))
 
 
-def get_geometry(sensor, mtdFile, mtdFile_tile=None):
+def get_geometry(sensor, mtdFile, **kwargs):
     if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         gdict = worldview.geometry.get_geometry(mtdFile)
@@ -22,6 +22,6 @@ def get_geometry(sensor, mtdFile, mtdFile_tile=None):
         gdict = landsat8.geometry.get_geometry(mtdFile)
     elif sensor_is(sensor, 'S2'):
         from atmcorr import sentinel2
-        gdict = sentinel2.geometry.get_geometry(mtdFile, mtdFile_tile)
+        gdict = sentinel2.geometry.get_geometry(mtdFile, **kwargs)
     _check_gdict(gdict)
     return gdict

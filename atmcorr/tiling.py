@@ -1,61 +1,82 @@
 from __future__ import division
 
-import numpy as np
+import affine
 import pyproj
+import numpy as np
+
+from atmcorr import resampling
 
 
-def get_tile_corners_ij(height, width, xtilesize, ytilesize):
-    """Tile image with width and height into windows of size tilesize
+def get_tiled_transform_shape(src_transform, src_shape, dst_res):
+    """Get transform and shape of tile grid with resolution dst_res
 
     Paramters
     ---------
-    height, width : int
-        image dimensions
-    xtilesize, ytilesize : int
-        tile sizes
+    src_transform : affine.Affine
+        source transform
+    src_shape : int, int
+        source shape
+    dst_res : float or tuple (float, float)
+        destination resolution
 
     Returns
     -------
-    ndarray shape(ny, nx) of rasterio.windows.Window
-        windows
+    affine.Affine
+        target transform
+    tuple (int, int)
+        target shape
     """
-    nx = int(width / xtilesize + 0.5)
-    ny = int(height / ytilesize + 0.5)
+    src_res = np.array((src_transform.a, src_transform.e))
+    scale = np.abs(dst_res / src_res)
+    dst_transform = src_transform * affine.Affine(scale[0], 0, 0, 0, scale[1], 0)
+    dst_shape = tuple(np.ceil(np.array(src_shape) / scale).astype(int))
+    return dst_transform, dst_shape
 
-    jj = np.arange(ny)
-    ii = np.arange(nx)
-    jmesh, imesh = np.meshgrid(jj, ii, indexing='ij')
-    assert jmesh.shape == (ny, nx)
 
-    # tile grid dims, 4 corners, (x, y)
-    corners = np.zeros((2, 4, ny, nx))
+def _get_corner_coordinates(transform, height, width):
+    """Get coordinates of all four pixel corners of an image of given transform and shape
 
-    bottom = jmesh * ytilesize
-    left = imesh * xtilesize
-    top = np.minimum((bottom + ytilesize - 1), (height - 1))
-    right = np.minimum((left + xtilesize - 1), (width - 1))
-    # now create four corner points
-    corners[:, 0, ...] = np.stack((left, bottom), axis=0)
-    corners[:, 1, ...] = np.stack((left, top), axis=0)
-    corners[:, 2, ...] = np.stack((right, top), axis=0)
-    corners[:, 3, ...] = np.stack((right, bottom), axis=0)
+    Parameters
+    ----------
+    transform : affine.Affine
+        image transform
+    height, width : int
+        image shape
+
+    Returns
+    -------
+    ndarray of shape (2, 4, height, width)
+        x, y corner coordinates
+        ul, ur, lr, ll
+    """
+    # j index top-first to get bottom-up image with negative transform.e
+    i = np.arange(width + 1)
+    j = np.arange(height + 1)[::-1]
+    jj, ii = np.meshgrid(j, i, indexing='ij')
+    xx, yy = transform * (ii, jj)
+    ul = np.stack((xx[:-1, :-1], yy[:-1, :-1]), axis=0)
+    ur = np.stack((xx[:-1, 1:], yy[:-1, 1:]), axis=0)
+    lr = np.stack((xx[1:, 1:], yy[1:, 1:]), axis=0)
+    ll = np.stack((xx[1:, :-1], yy[1:, :-1]), axis=0)
+    corners = np.zeros((2, 4, height, width))
+    corners[:, 0, ...] = ul
+    corners[:, 1, ...] = ur
+    corners[:, 2, ...] = lr
+    corners[:, 3, ...] = ll
     return corners
 
 
-def transform_corners(corners, src_transform, src_crs, dst_crs={'init': 'epsg:4326'}):
+def _transform_corners(corners, src_crs, dst_crs):
     """Transform corners from array indices to dst_crs coordinates
 
     Parameters
     ----------
-    corners : ndarray shape(2, ...) dtype(int)
+    corners : ndarray shape(2, N, ...) dtype(int)
         x,y pairs for N corners
-    src_transform : affine.Affine
-        source image transform
     src_crs : dict or rasterio.crs.CRS
         source coordinate reference system
     dst_crs : dict or rasterio.crs.CRS
         destination coordinate reference system
-        default: WGS84 (lon, lat)
 
     Returns
     -------
@@ -64,18 +85,18 @@ def transform_corners(corners, src_transform, src_crs, dst_crs={'init': 'epsg:43
     """
     src_proj = pyproj.Proj(src_crs)
     dst_proj = pyproj.Proj(dst_crs)
-    xs, ys = src_transform * corners
+    xs, ys = corners
     xout, yout = pyproj.transform(src_proj, dst_proj, xs, ys)
     return xout, yout
 
 
-def corners_to_extents(xs, ys):
+def _corners_to_extents(xs, ys):
     """Convert arrays of corner coordinates to an extent record array
 
     Parameters
     ----------
     xs, ys : ndarray shape(N, ...)
-        x and y coordinates
+        x and y coordinates of N corners
 
     Returns
     -------
@@ -88,32 +109,32 @@ def corners_to_extents(xs, ys):
     return extent_rec
 
 
-def get_tile_extents(height, width, src_transform, src_crs, xtilesize, ytilesize):
-    """For an image of height, width get extents for tiles of size xtilesize, ytilesize
+def get_projected_extents(transform, height, width, src_crs, dst_crs={'init': 'epsg:4326'}):
+    """Get extents of pixels in WGS84 or other projection
 
     Parameters
     ----------
+    transform : affine.Affine
+        image transform
     height, width : int
         image shape
-    src_transform : affine.Affine
-        image transform
     src_crs : dict or rasterio.crs.CRS
         source coordinate reference system
-    xtilesize, ytilesize : int
-        tile sizes
+    dst_crs : dict or rasterio.crs.CRS
+        destination coordinate reference system
+        default: WGS84 (lon, lat)
 
     Returns
     -------
     np.recarray shape(...)
         xmin, xmax, ymin, ymax
     """
-    corners = get_tile_corners_ij(height, width, xtilesize, ytilesize)
-    lon, lat = transform_corners(corners, src_transform, src_crs)
-    extents_rec = corners_to_extents(lon, lat)
-    return extents_rec
+    corners = _get_corner_coordinates(transform, height, width)
+    xproj, yproj = _transform_corners(corners, src_crs, dst_crs=dst_crs)
+    return _corners_to_extents(xproj, yproj)
 
 
-def extents_from_bounds(left, bottom, right, top, src_crs, dst_crs={'init': 'epsg:4326'}):
+def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs={'init': 'epsg:4326'}):
     """Get extents record array from bounds
 
     Parameters
@@ -122,10 +143,87 @@ def extents_from_bounds(left, bottom, right, top, src_crs, dst_crs={'init': 'eps
         extents
     src_crs, dst_crs : dict
         source and destination coordinate reference systems
+
+    Returns
+    -------
+    np.recarray shape (1, 1)
+        with names xmin, xmax, ymin, ymax
     """
     src_proj = pyproj.Proj(src_crs)
     dst_proj = pyproj.Proj(dst_crs)
-    xs = [left, left, right, right]
-    ys = [bottom, top, top, bottom]
-    xout, yout = pyproj.transform(src_proj, dst_proj, xs, ys)
-    return corners_to_extents(xs, ys)
+    xs = np.array([left, left, right, right])
+    ys = np.array([bottom, top, top, bottom])
+    xproj, yproj = pyproj.transform(src_proj, dst_proj, xs, ys)
+    return _corners_to_extents(xproj, yproj)[np.newaxis, np.newaxis]
+
+
+def get_projected_image_extent(transform, height, width, src_crs, dst_crs={'init': 'epsg:4326'}):
+    """Get extents of a whole image in WGS84 or other projection
+
+    Parameters
+    ----------
+    transform : affine.Affine
+        image transform
+    height, width : int
+        image shape
+    src_crs : dict or rasterio.crs.CRS
+        source coordinate reference system
+    dst_crs : dict or rasterio.crs.CRS
+        destination coordinate reference system
+        default: WGS84 (lon, lat)
+
+    Returns
+    -------
+    np.recarray shape (1, 1)
+        with names xmin, xmax, ymin, ymax
+    """
+    left, top = transform * (0, 0)
+    right, bottom = transform * (height, width)
+    return bounds_to_projected_extents(
+        left, bottom, right, top, src_crs, dst_crs=dst_crs)
+
+
+def recarr_take_dict(a, *idx):
+    return dict(zip(a.dtype.names, a[idx]))
+
+
+def resample_correction_params(corrparams, src_transform, src_crs, dst_transform, dst_shape):
+    """Resampled 6S correction parameters from one per tile to one per image pixel
+
+    Parameters
+    ----------
+    corrparams : np.recarray shape(nbands, njtiles, nitiles)
+        correction parameters
+    src_transform : affine.Affine
+        tiling grid transform
+    src_crs : dict
+        source (and destination) spatial reference system
+    dst_transform : affine.Affine
+        destination image transform
+    dst_shape : tuple (int, int)
+        destination shape
+
+    Returns
+    -------
+    np.recarray
+        resampled correction parameters
+    """
+    nbands, nj, ni = corrparams.shape
+    ntiles = nj * ni
+
+    resampled = np.empty(((nbands, ) + dst_shape), dtype=corrparams.dtype)
+    for field in resampled.dtype.names:
+        if ntiles == 1:
+            # take single value
+            resampled[field][:] = corrparams[field][0, 0]
+        else:
+            # interpolate
+            resampled[field] = resampling.resample(
+                source=corrparams[field],
+                src_transform=src_transform,
+                src_crs=src_crs,
+                dst_shape=dst_shape,
+                dst_transform=dst_transform,
+                dst_crs=src_crs,
+                resampling=None)
+    return resampled

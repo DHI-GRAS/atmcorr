@@ -2,13 +2,18 @@ import os
 import copy
 import logging
 import datetime
+import multiprocessing
 
 import numpy as np
 import dateutil
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
-from atmcorr.sensors import sensor_is, sensor_is_any, check_sensor_supported
+from atmcorr.sensors import sensor_is
+from atmcorr.sensors import sensor_is_any
+from atmcorr.sensors import check_sensor_supported
+from atmcorr import viewing_geometry
+from atmcorr import response_curves
 
 try:
     import modis_atm.params
@@ -19,6 +24,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
+NUM_PROCESSES = None
 
 
 def main_optdict(options):
@@ -29,7 +35,7 @@ def main(
         data, profile,
         sensor, mtdFile, method,
         aeroProfile, atm={},
-        tileSizePixels=0,
+        tileSize=0,
         adjCorr=True,
         aotMultiplier=1.0,
         mtdFile_tile=None, band_ids=None, date=None,
@@ -53,7 +59,7 @@ def main(
         atmospheric parameters
     aeroProfile : str
         aero profile name
-    tileSizePixels : int
+    tileSize : int
         tile size in pixels
     adjCorr : bool
         perform adjacency correction
@@ -138,7 +144,7 @@ def main(
         data = _main_6S(
                 data, profile, band_ids, sensor, date,
                 mtdFile, mtdFile_tile,
-                atm, kwargs_toa_radiance, tileSizePixels,
+                atm, kwargs_toa_radiance, tileSize,
                 adjCorr, aotMultiplier, aeroProfile,
                 use_modis, modis_atm_dir, earthdata_credentials)
     elif method in ['DOS', 'TOA']:
@@ -163,11 +169,12 @@ def main(
 def _main_6S(
         data, profile, band_ids, sensor, date,
         mtdFile, mtdFile_tile,
-        atm, kwargs_toa_radiance, tileSizePixels,
+        atm, kwargs_toa_radiance, tileSize,
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
-    res = profile['transform'].a
+    if tileSize and adjCorr:
+        raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
 
     # convert to radiance
     data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
@@ -175,60 +182,77 @@ def _main_6S(
         raise RuntimeError('Data is all zeros.')
 
     nbands, height, width = data.shape
-    profile.update(width=width, height=height)
 
-    if tileSizePixels > 0:
-        tilegrid_kw = dict(
-                xtilesize=tileSizePixels,
-                ytilesize=tileSizePixels)
+    if tileSize:
+        tiling_transform, tiling_shape = tiling.get_tiled_transform_shape(
+            src_transform=profile['transform'], src_shape=(height, width), dst_res=tileSize)
+        tile_extents_wgs = tiling.get_projected_extents(
+            transform=tiling_transform,
+            height=tiling_shape[0], width=tiling_shape[1],
+            src_crs=profile['crs'])
     else:
-        tilegrid_kw = dict(
-                xtilesize=width,
-                ytilesize=height)
-    tile_extents = tiling.get_tile_extents(
-            height=height,
-            width=width,
-            src_transform=profile['transform'],
-            src_crs=profile['crs'],
-            **tilegrid_kw)
-    if tile_extents.shape == ():
-        tile_extents = tile_extents.reshape((1, 1))
+        tile_extents_wgs = tiling.get_projected_image_extent(
+            transform=profile['transform'],
+            height=height, width=width,
+            src_crs=profile['crs'])
+        tiling_transform = None
+        tiling_shape = (1, 1)
+
+    geometry_dict = viewing_geometry.get_geometry(
+        sensor, mtdFile,
+        mtdFile_tile=mtdFile_tile,
+        dst_transform=tiling_transform,
+        dst_shape=tiling_shape)
+
+    rcurves_dict = response_curves.get_response_curves(sensor, band_ids)
 
     # Structure holding the 6S correction parameters has, for each band in
     # the image, arrays of values (one for each tile)
     # of the three correction parameters
-    njtiles, nitiles = tile_extents.shape
     correctionParams = np.zeros(
-            (nbands, njtiles, nitiles),
-            dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+        ((nbands, ) + tiling_shape),
+        dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
 
-    nruns = njtiles * nitiles
-    if nruns > 1 and adjCorr:
-        raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
+    nprocs = NUM_PROCESSES
+    if nprocs is None:
+        nprocs = multiprocessing.cpu_count()
+    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
+    processor_pool = multiprocessing.Pool(nprocs)
 
     # Get 6S correction parameters for an extent of each tile
+    atm_orig = copy.copy(atm)
     mysixs = None
-    for j in range(njtiles):
-        for i in range(nitiles):
-            extent = dict(zip(tile_extents.dtype.names, tile_extents[j, i]))
+    for j in range(tiling_shape[0]):
+        for i in range(tiling_shape[1]):
+            extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
             logger.debug('tile %d,%d extent is %s', j, i, extent)
-            atm = copy.copy(atm)
             # If MODIS atmospheric data was downloaded then use it to set
             # different atmospheric parameters for each tile
+            atm = copy.copy(atm_orig)
             if use_modis:
                 logger.info('Retrieving MODIS atmospheric parameters')
                 atm_modis = modis_atm.params.retrieve_parameters(
-                        date=date,
-                        extent=extent,
-                        credentials=earthdata_credentials,
-                        download_dir=modis_atm_dir)
+                    date=date,
+                    extent=extent,
+                    credentials=earthdata_credentials,
+                    download_dir=modis_atm_dir)
                 logger.info(atm_modis)
                 atm = atm_modis
                 for k in atm:
                     if atm[k] is None:
                         raise ValueError(
-                                'One or more atm parameters could not be retrieved: {}.'
-                                .format(atm))
+                            'One or more atm parameters could not be retrieved: {}.'
+                            .format(atm))
+
+            if tiling_shape == (1, 1):
+                # get angles for whole image
+                geometry_dict_tile = geometry_dict
+            else:
+                # get angles for this tile
+                geometry_dict_tile = {}
+                for key, value in geometry_dict.items():
+                    geometry_dict_tile[key] = (
+                        value[j, i] if isinstance(value, np.ndarray) else value)
 
             atm['AOT'] *= aotMultiplier
             logger.debug('AOT: %s', atm['AOT'])
@@ -236,24 +260,39 @@ def _main_6S(
             logger.debug('Ozone: %s', atm['ozone'])
 
             mysixs, tilecp = wrap_6S.get_correction_params(
-                    sensor=sensor,
-                    mtdFile=mtdFile,
-                    mtdFile_tile=mtdFile_tile,
-                    atm=atm,
-                    band_ids=band_ids,
-                    aeroProfile=aeroProfile,
-                    extent=extent)
+                processor_pool=processor_pool,
+                sensor=sensor,
+                atm=atm,
+                geometry_dict=geometry_dict_tile,
+                rcurves_dict=rcurves_dict,
+                aeroProfile=aeroProfile)
 
             nbands = len(tilecp)
             for b in range(nbands):
                 correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
                 correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
                 correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
-    logger.debug('Correction parameters: %s', correctionParams)
+    processor_pool.close()
+    processor_pool.join()
+
+    if tiling_shape == (1, 1):
+        corrparams = {
+            field: correctionParams[field][:, 0, 0]
+            for field in correctionParams.dtype.names}
+    else:
+        corrparams = tiling.resample_correction_params(
+            correctionParams,
+            src_transform=tiling_transform,
+            src_crs=profile['crs'],
+            dst_transform=profile['transform'],
+            dst_shape=data.shape)
 
     data = wrap_6S.perform_correction(
-            data, correctionParams, pixel_size=res, adjCorr=adjCorr,
-            mysixs=mysixs)
+        data,
+        corrparams=corrparams,
+        pixel_size=profile['transform'].a,
+        adjCorr=adjCorr,
+        mysixs=mysixs)
 
     return data
 
@@ -281,10 +320,10 @@ def _toa_radiance(
         required for Sentinel 2
     """
     commonkw = dict(
-            data=data,
-            mtdFile=mtdFile,
-            doDOS=doDOS,
-            band_ids=band_ids)
+        data=data,
+        mtdFile=mtdFile,
+        doDOS=doDOS,
+        band_ids=band_ids)
     if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
         return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
@@ -356,7 +395,7 @@ def _landsat8_compute_radiance(infiles, mtdFile, band_ids, outfile=None):
         outfile = os.path.join(outdir, 'l8_radiance.tif')
     bands = [str(bid + 1) for bid in band_ids]
     landsat8.radiance.rio_toa_radiance(
-            infiles=infiles,
-            outfile=outfile,
-            mtdfile=mtdFile,
-            bands=bands)
+        infiles=infiles,
+        outfile=outfile,
+        mtdfile=mtdFile,
+        bands=bands)
