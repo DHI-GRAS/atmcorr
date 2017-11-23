@@ -28,6 +28,16 @@ MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
 NUM_PROCESSES = None
 
 
+def _earthdata_credentials_from_env():
+    auth = dict(
+        username=os.environ.get('EARTHDATA_USERNAME'),
+        password=os.environ.get('EARTHDATA_PASSWORD'))
+    if None in list(auth.values):
+        raise ValueError(
+            'Environment variables ERTHDATA_USERNAME and EARTHDATA_PASSWORD not set.')
+    return auth
+
+
 def main_optdict(options):
     main(**options)
 
@@ -41,7 +51,7 @@ def main(
         aotMultiplier=1.0,
         mtdFile_tile=None, band_ids=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
-        earthdata_credentials={}):
+        earthdata_credentials=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -100,10 +110,13 @@ def main(
     if use_modis:
         if not HAS_MODIS:
             raise ValueError(
-                    'To download MODIS parameters, you need to '
-                    'install the `modis_atm` package.')
+                'To download MODIS parameters, you need to '
+                'install the `modis_atm` package.')
         if not earthdata_credentials:
-            raise ValueError(
+            try:
+                earthdata_credentials = _earthdata_credentials_from_env()
+            except ValueError:
+                raise ValueError(
                     'To download MODIS parameters, you need to '
                     'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
         if not os.path.isdir(modis_atm_dir):
@@ -119,11 +132,14 @@ def main(
     nbands = data.shape[0]
     if len(band_ids) != nbands:
         raise ValueError(
-                'Number of band IDs ({}) does not correspond to number of bands ({}).'
-                .format(len(band_ids), nbands))
+            'Number of band IDs ({}) does not correspond to number of bands ({}).'
+            .format(len(band_ids), nbands))
 
     if band_ids is None:
         band_ids = np.arange(nbands)
+
+    if atm is None:
+        atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
     kwargs_toa_radiance = dict(
             mtdFile=mtdFile,
@@ -135,10 +151,6 @@ def main(
         if nodata not in [0, 65536]:
             data[data == nodata] = 0
             profile['nodata'] = 0
-
-    # keep unchanged copy of atm dict
-    if atm is None:
-        atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
     # DN -> Radiance -> Reflectance
     if method == '6S':
@@ -214,14 +226,15 @@ def _main_6S(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
 
-    tile_index_iter = itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
+    def _get_tile_index_iter():
+        return itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
 
     # retrieve MODIS parameters for all tiles
     all_atm = []
     if not use_modis:
         all_atm.append(atm)
     else:
-        for j, i in tile_index_iter:
+        for j, i in _get_tile_index_iter():
             extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
             logger.debug('tile %d,%d extent is %s', j, i, extent)
             # If MODIS atmospheric data was downloaded then use it to set
@@ -254,7 +267,7 @@ def _main_6S(
         # get angles for whole image
         all_geom.append(geometry_dict)
     else:
-        for j, i in tile_index_iter:
+        for j, i in _get_tile_index_iter():
             # extract angles for this tile
             geometry_dict_tile = {}
             for key, value in geometry_dict.items():
@@ -271,8 +284,8 @@ def _main_6S(
 
     # Get 6S correction parameters for each tile
     mysixs = None
-    for ktile, (j, i) in enumerate(tile_index_iter):
-        atm_tile = all_atm[ktile].copy()
+    for ktile, (j, i) in enumerate(_get_tile_index_iter()):
+        atm_tile = all_atm[min(ktile, len(all_atm)-1)].copy()
         geom_tile = all_geom[ktile]
 
         mysixs, tilecp = wrap_6S.get_correction_params(
