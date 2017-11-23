@@ -7,6 +7,7 @@ import multiprocessing
 
 import numpy as np
 import dateutil
+import tqdm
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
@@ -15,6 +16,8 @@ from atmcorr.sensors import sensor_is_any
 from atmcorr.sensors import check_sensor_supported
 from atmcorr import viewing_geometry
 from atmcorr import response_curves
+from atmcorr.adjacency_correction import adjacency_correction
+from atmcorr import resampling
 
 try:
     import modis_atm.params
@@ -186,9 +189,6 @@ def _main_6S(
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
-    if tileSize and adjCorr:
-        raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
-
     # convert to radiance
     data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
@@ -222,10 +222,11 @@ def _main_6S(
     # Structure holding the 6S correction parameters has, for each band in
     # the image, arrays of values (one for each tile)
     # of the three correction parameters
-    correctionParams = np.zeros(
+    correction_params = np.zeros(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
-    adjcorrParams = np.zeros(((4, nbands) + tiling_shape), dtype='f4')
+    if adjCorr:
+        adjacency_params = np.zeros(((4, nbands) + tiling_shape), dtype='f4')
 
     def _get_tile_index_iter():
         return itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
@@ -289,38 +290,70 @@ def _main_6S(
             for b, job in enumerate(jobs):
                 yield tuple(job) + (b, j, i)
 
+    njobs = tiling_shape[0] * tiling_shape[1] * nbands
+    jobs_iter = _job_generator()
+    if njobs > nbands:
+        jobs_iter = tqdm.tqdm(jobs_iter, total=njobs, desc='Getting 6S', unit='job')
+
     # initialize processing pool
     nprocs = NUM_PROCESSES
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
     pool = multiprocessing.Pool(nprocs)
-
+    # execute 6S jobs
     for tilecp, adjcoef, idx in pool.imap(
-            wrap_6S.run_sixs_job, _job_generator()):
+            wrap_6S.run_sixs_job, jobs_iter):
         b, j, i = idx
-        for field in correctionParams.dtype.names:
-            correctionParams[field][b, j, i] = tilecp[field]
-        adjcorrParams[:, b, j, i] = adjcoef
+        for field in correction_params.dtype.names:
+            correction_params[field][b, j, i] = tilecp[field]
+        if adjCorr:
+            adjacency_params[:, b, j, i] = adjcoef
+    # close pool
     pool.close()
     pool.join()
 
+    # reproject parameters
     if tiling_shape == (1, 1):
         corrparams = {
-            field: correctionParams[field][:, 0, 0]
-            for field in correctionParams.dtype.names}
+            field: correction_params[field][:, 0, 0]
+            for field in correction_params.dtype.names}
+        if adjCorr:
+            adjparams = adjacency_params[:, :, 0, 0]
     else:
-        corrparams = tiling.resample_correction_params(
-            correctionParams,
-            src_transform=tiling_transform,
-            src_crs=profile['crs'],
-            dst_transform=profile['transform'],
-            dst_shape=data.shape)
+        logger.debug('resampling correction parameters')
+        # resample 6S correction parameters to image
+        corrparams = np.empty(data.shape, dtype=correction_params.dtype)
+        for field in corrparams.dtype.names:
+            corrparams[field] = resampling.resample(
+                source=correction_params[field],
+                src_transform=tiling_transform,
+                src_crs=profile['crs'],
+                dst_transform=profile['transform'],
+                dst_shape=data.shape)
+        if adjCorr:
+            # resample adjacency correction parameters to image
+            # collapse first two dimensions
+            collapsed_in = adjacency_params.reshape((-1, ) + adjacency_params.shape[2:])
+            dst_shape = (collapsed_in.shape[0], ) + data.shape[1:]
+            collapsed_out = resampling.resample(
+                source=collapsed_in,
+                src_transform=tiling_transform,
+                src_crs=profile['crs'],
+                dst_transform=profile['transform'],
+                dst_shape=dst_shape)
+            # unpack dimensions again
+            final_shape = (adjacency_params.shape[0], ) + data.shape
+            adjparams = collapsed_out.reshape(final_shape)
 
-    data = wrap_6S.perform_correction(
-        data,
-        corrparams=corrparams,
-        pixel_size=profile['transform'].a,
-        adjCorr=False)
+    # apply 6s correction parameters
+    data = wrap_6S.perform_correction(data, corrparams)
+
+    if adjCorr:
+        # perform adjecency correction
+            data = adjacency_correction(
+                data,
+                *adjparams,
+                pixel_size=profile['transform'].a)
 
     return data
 
@@ -411,19 +444,3 @@ def _get_sensing_date(sensor, mtdFile):
         return sentinel2.metadata.get_date(mtdFile)
     else:
         raise ValueError('Unknown sensor.')
-
-
-def _landsat8_compute_radiance(infiles, mtdFile, band_ids, outfile=None):
-    import landsat8.radiance
-    if outfile is None:
-        if isinstance(infiles, (list, tuple)):
-            outdir = os.path.dirname(infiles[0])
-        else:
-            outdir = os.path.dirname(infiles)
-        outfile = os.path.join(outdir, 'l8_radiance.tif')
-    bands = [str(bid + 1) for bid in band_ids]
-    landsat8.radiance.rio_toa_radiance(
-        infiles=infiles,
-        outfile=outfile,
-        mtdfile=mtdFile,
-        bands=bands)

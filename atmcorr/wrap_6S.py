@@ -9,8 +9,6 @@ from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
 
-from atmcorr.adjacency_correction import adjacency_correction
-
 logger = logging.getLogger(__name__)
 
 GEOMETRY_ATTRS = {
@@ -157,8 +155,7 @@ def run_sixs_job(args):
     return (xdict, adjcorr_params, moreargs)
 
 
-def perform_correction(
-        radiance, corrparams, pixel_size, radius=1, adjCorr=False, adjcorr_params=None):
+def perform_correction(radiance, corrparams):
     """Perform atmospheric correction
 
     Parameters
@@ -168,19 +165,7 @@ def perform_correction(
     corrparams : recarray or dict of float
         correction parameters
         fields/keys: xa, xb, xc
-    pixel_size : int
-        pixel size
-    radius : int
-        radius
-    adjCorr : bool
-        do adjacency correct
-    adjcorr_params : SixS instance, optional
-        SixS model
-        required for adjCorr
     """
-    if adjCorr and adjcorr_params is None:
-        raise ValueError('adjCorr requires 6S instance')
-
     xa, xb, xc = (corrparams[field] for field in ['xa', 'xb', 'xc'])
     nbands = radiance.shape[0]
     reflectance = np.full(radiance.shape, np.nan, dtype='f4')
@@ -197,13 +182,4 @@ def perform_correction(
             # safe to ignore: NaN elements remain NaN
             refl_band[refl_band < 0] = 0
         reflectance[i] = refl_band
-
-    # Perform adjecency correction if required
-    if adjCorr:
-        for i in range(nbands):
-            reflectance[i] = adjacency_correction(
-                    reflectance[i],
-                    pixel_size,
-                    adjcorr_params,
-                    radius)
     return reflectance

@@ -4,8 +4,6 @@ import affine
 import pyproj
 import numpy as np
 
-from atmcorr import resampling
-
 
 def get_tiled_transform_shape(src_transform, src_shape, dst_res):
     """Get transform and shape of tile grid with resolution dst_res
@@ -185,45 +183,3 @@ def get_projected_image_extent(transform, height, width, src_crs, dst_crs={'init
 
 def recarr_take_dict(a, *idx):
     return dict(zip(a.dtype.names, a[idx]))
-
-
-def resample_correction_params(corrparams, src_transform, src_crs, dst_transform, dst_shape):
-    """Resampled 6S correction parameters from one per tile to one per image pixel
-
-    Parameters
-    ----------
-    corrparams : np.recarray shape(nbands, njtiles, nitiles)
-        correction parameters
-    src_transform : affine.Affine
-        tiling grid transform
-    src_crs : dict
-        source (and destination) spatial reference system
-    dst_transform : affine.Affine
-        destination image transform
-    dst_shape : tuple (int, int)
-        destination shape
-
-    Returns
-    -------
-    np.recarray
-        resampled correction parameters
-    """
-    nj, ni = corrparams.shape[1:]
-    ntiles = nj * ni
-
-    resampled = np.empty(dst_shape, dtype=corrparams.dtype)
-    for field in resampled.dtype.names:
-        if ntiles == 1:
-            # take single value
-            resampled[field][:] = corrparams[field][0, 0]
-        else:
-            # interpolate
-            resampled[field] = resampling.resample(
-                source=corrparams[field],
-                src_transform=src_transform,
-                src_crs=src_crs,
-                dst_shape=dst_shape,
-                dst_transform=dst_transform,
-                dst_crs=src_crs,
-                resampling=None)
-    return resampled

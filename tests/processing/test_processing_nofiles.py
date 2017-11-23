@@ -57,10 +57,10 @@ def test_workflow_wv2_adjCorr():
 
 
 @pytest.mark.slow
-def test_workflow_wv2_tiled():
+def test_workflow_wv2_adjCorr_tiled():
     inputs = _get_inputs()
     inputs.update(
-        adjCorr=False,
+        adjCorr=True,
         tileSize=100)
     outdata, _ = processing.main(**inputs)
     assert outdata.shape == inputs['data'].shape
