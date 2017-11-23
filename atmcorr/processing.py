@@ -225,6 +225,7 @@ def _main_6S(
     correctionParams = np.zeros(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+    adjcorrParams = np.zeros(((4, nbands) + tiling_shape), dtype='f4')
 
     def _get_tile_index_iter():
         return itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
@@ -275,33 +276,33 @@ def _main_6S(
                     value[j, i] if isinstance(value, np.ndarray) else value)
             all_geom.append(geometry_dict_tile)
 
+    # Get 6S correction parameters for each tile
+    def _job_generator():
+        for ktile, (j, i) in enumerate(_get_tile_index_iter()):
+            atm_tile = all_atm[min(ktile, len(all_atm)-1)]
+            geom_tile = all_geom[ktile]
+            jobs = wrap_6S.generate_jobs(
+                atm=atm_tile,
+                geometry_dict=geom_tile,
+                rcurves_dict=rcurves_dict,
+                aeroProfile=aeroProfile)
+            for b, job in enumerate(jobs):
+                yield tuple(job) + (b, j, i)
+
     # initialize processing pool
     nprocs = NUM_PROCESSES
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
-    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
-    processor_pool = multiprocessing.Pool(nprocs)
+    pool = multiprocessing.Pool(nprocs)
 
-    # Get 6S correction parameters for each tile
-    mysixs = None
-    for ktile, (j, i) in enumerate(_get_tile_index_iter()):
-        atm_tile = all_atm[min(ktile, len(all_atm)-1)].copy()
-        geom_tile = all_geom[ktile]
-
-        mysixs, tilecp = wrap_6S.get_correction_params(
-            processor_pool=processor_pool,
-            sensor=sensor,
-            atm=atm_tile,
-            geometry_dict=geom_tile,
-            rcurves_dict=rcurves_dict,
-            aeroProfile=aeroProfile)
-
-        for b in range(len(tilecp)):
-            for field in correctionParams.dtype.names:
-                correctionParams[field][b, j, i] = tilecp[b][field]
-
-    processor_pool.close()
-    processor_pool.join()
+    for tilecp, adjcoef, idx in pool.imap(
+            wrap_6S.run_sixs_job, _job_generator()):
+        b, j, i = idx
+        for field in correctionParams.dtype.names:
+            correctionParams[field][b, j, i] = tilecp[field]
+        adjcorrParams[:, b, j, i] = adjcoef
+    pool.close()
+    pool.join()
 
     if tiling_shape == (1, 1):
         corrparams = {
@@ -319,8 +320,7 @@ def _main_6S(
         data,
         corrparams=corrparams,
         pixel_size=profile['transform'].a,
-        adjCorr=adjCorr,
-        mysixs=mysixs)
+        adjCorr=False)
 
     return data
 
