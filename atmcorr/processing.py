@@ -293,7 +293,8 @@ def _main_6S(
     njobs = tiling_shape[0] * tiling_shape[1] * nbands
     jobs_iter = _job_generator()
     if njobs > nbands:
-        jobs_iter = tqdm.tqdm(jobs_iter, total=njobs, desc='Getting 6S', unit='job')
+        jobs_iter = tqdm.tqdm(
+            jobs_iter, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
     nprocs = NUM_PROCESSES
