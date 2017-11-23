@@ -9,7 +9,6 @@ from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
 
-from atmcorr import utils
 from atmcorr.adjacency_correction import adjacency_correction
 
 logger = logging.getLogger(__name__)
@@ -163,16 +162,17 @@ def get_correction_params(
     return mysixs, output
 
 
-def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, mysixs=None):
+def perform_correction(
+        radiance, corrparams, pixel_size, radius=1, adjCorr=False, mysixs=None):
     """Perform atmospheric correction
 
     Parameters
     ----------
-    data : ndarray shape(nbands, ny, nx)
+    radiance : ndarray shape(nbands, ny, nx)
         input data
-    corrparams : record array shape=(nbands, nj, ni) fields=['xa', 'xb', 'xc']
-        correction parameters (can be tiled)
-        nj, ni are the tile indices
+    corrparams : recarray or dict of float
+        correction parameters
+        fields/keys: xa, xb, xc
     pixel_size : int
         pixel size
     radius : int
@@ -186,41 +186,19 @@ def perform_correction(data, corrparams, pixel_size, radius=1, adjCorr=False, my
     if adjCorr and mysixs is None:
         raise ValueError('adjCorr requires 6S instance')
 
-    nbands, nj, ni = corrparams.shape
-    ntiles = nj * ni
+    xa, xb, xc = (corrparams[field] for field in ['xa', 'xb', 'xc'])
 
-    if not nbands == data.shape[0]:
-        raise ValueError(
-                'First dimension of corrparams should correspond to '
-                'first (band) dimension of data.')
-
-    reflectance = np.full(data.shape, np.nan, dtype='f4')
+    nbands = radiance.shape[0]
+    reflectance = np.full(radiance.shape, np.nan, dtype='f4')
 
     for i in range(nbands):
-        corrparams_band = corrparams[i]
-        # Read uncorrected radiometric data and correct
-        radiance = data[i]
-
-        # Interpolate the 6S correction parameters from one per image tile to
-        # one per image pixel
-        if ntiles == 1:
-            # take single value
-            xa = corrparams_band['xa'][0, 0]
-            xb = corrparams_band['xb'][0, 0]
-            xc = corrparams_band['xc'][0, 0]
-        else:
-            # interpolate
-            xa = utils.imresize(corrparams_band['xa'], radiance.shape)
-            xb = utils.imresize(corrparams_band['xb'], radiance.shape)
-            xc = utils.imresize(corrparams_band['xc'], radiance.shape)
-
         # Perform the atmospheric correction
         with np.errstate(invalid='ignore'):
             # safe to ignore: failing elements already NaN
-            mask_nan = radiance == 0
-        y = xa * radiance - xb
+            mask_nan = radiance[i] == 0
+        y = xa[i] * radiance[i] - xb[i]
         y[mask_nan] = np.nan
-        refl_band = y / (xc * y + 1.0)
+        refl_band = y / (xc[i] * y + 1.0)
         with np.errstate(invalid='ignore'):
             # safe to ignore: NaN elements remain NaN
             refl_band[refl_band < 0] = 0

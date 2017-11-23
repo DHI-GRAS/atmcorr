@@ -24,8 +24,7 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
-
-NUM_PROCESSES = None  # default: all available
+NUM_PROCESSES = None
 
 
 def main_optdict(options):
@@ -275,10 +274,22 @@ def _main_6S(
                 correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
     processor_pool.close()
     processor_pool.join()
-    logger.debug('Correction parameters: %s', correctionParams)
+
+    if tiling_shape == (1, 1):
+        corrparams = {
+            field: correctionParams[field][:, 0, 0]
+            for field in correctionParams.dtype.names}
+    else:
+        corrparams = tiling.resample_correction_params(
+            correctionParams,
+            src_transform=tiling_transform,
+            src_crs=profile['crs'],
+            dst_transform=profile['transform'],
+            dst_shape=data.shape)
 
     data = wrap_6S.perform_correction(
-        data, correctionParams,
+        data,
+        corrparams=corrparams,
         pixel_size=profile['transform'].a,
         adjCorr=adjCorr,
         mysixs=mysixs)
