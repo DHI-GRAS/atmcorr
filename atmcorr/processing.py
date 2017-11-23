@@ -2,6 +2,7 @@ import os
 import copy
 import logging
 import datetime
+import itertools
 import multiprocessing
 
 import numpy as np
@@ -213,65 +214,79 @@ def _main_6S(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
 
+    tile_index_iter = itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
+
+    # retrieve MODIS parameters for all tiles
+    all_atm = []
+    if not use_modis:
+        all_atm.append(atm)
+    else:
+        for j, i in tile_index_iter:
+            extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
+            logger.debug('tile %d,%d extent is %s', j, i, extent)
+            # If MODIS atmospheric data was downloaded then use it to set
+            # different atmospheric parameters for each tile
+            logger.info('Retrieving MODIS atmospheric parameters')
+            atm_modis = modis_atm.params.retrieve_parameters(
+                date=date,
+                extent=extent,
+                credentials=earthdata_credentials,
+                download_dir=modis_atm_dir)
+            logger.info(atm_modis)
+            # check missing
+            missing = []
+            for key in atm_modis:
+                if atm_modis[key] is None:
+                    missing.append(key)
+            if missing:
+                raise ValueError(
+                    'Some atm parameters could not be retrieved ({}): {}.'
+                    .format(missing, atm_modis))
+            all_atm.append(atm_modis)
+
+    # apply aotMultiplier
+    for atm_tile in all_atm:
+        atm_tile['AOT'] *= aotMultiplier
+
+    # extract geometry dict for each tile
+    all_geom = []
+    if tiling_shape == (1, 1):
+        # get angles for whole image
+        all_geom.append(geometry_dict)
+    else:
+        for j, i in tile_index_iter:
+            # extract angles for this tile
+            geometry_dict_tile = {}
+            for key, value in geometry_dict.items():
+                geometry_dict_tile[key] = (
+                    value[j, i] if isinstance(value, np.ndarray) else value)
+            all_geom.append(geometry_dict_tile)
+
+    # initialize processing pool
     nprocs = NUM_PROCESSES
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
     nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
     processor_pool = multiprocessing.Pool(nprocs)
 
-    # Get 6S correction parameters for an extent of each tile
-    atm_orig = copy.copy(atm)
+    # Get 6S correction parameters for each tile
     mysixs = None
-    for j in range(tiling_shape[0]):
-        for i in range(tiling_shape[1]):
-            extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
-            logger.debug('tile %d,%d extent is %s', j, i, extent)
-            # If MODIS atmospheric data was downloaded then use it to set
-            # different atmospheric parameters for each tile
-            atm = copy.copy(atm_orig)
-            if use_modis:
-                logger.info('Retrieving MODIS atmospheric parameters')
-                atm_modis = modis_atm.params.retrieve_parameters(
-                    date=date,
-                    extent=extent,
-                    credentials=earthdata_credentials,
-                    download_dir=modis_atm_dir)
-                logger.info(atm_modis)
-                atm = atm_modis
-                for k in atm:
-                    if atm[k] is None:
-                        raise ValueError(
-                            'One or more atm parameters could not be retrieved: {}.'
-                            .format(atm))
+    for ktile, (j, i) in enumerate(tile_index_iter):
+        atm_tile = all_atm[ktile].copy()
+        geom_tile = all_geom[ktile]
 
-            if tiling_shape == (1, 1):
-                # get angles for whole image
-                geometry_dict_tile = geometry_dict
-            else:
-                # get angles for this tile
-                geometry_dict_tile = {}
-                for key, value in geometry_dict.items():
-                    geometry_dict_tile[key] = (
-                        value[j, i] if isinstance(value, np.ndarray) else value)
+        mysixs, tilecp = wrap_6S.get_correction_params(
+            processor_pool=processor_pool,
+            sensor=sensor,
+            atm=atm_tile,
+            geometry_dict=geom_tile,
+            rcurves_dict=rcurves_dict,
+            aeroProfile=aeroProfile)
 
-            atm['AOT'] *= aotMultiplier
-            logger.debug('AOT: %s', atm['AOT'])
-            logger.debug('Water Vapour: %s', atm['PWV'])
-            logger.debug('Ozone: %s', atm['ozone'])
+        for b in range(len(tilecp)):
+            for field in correctionParams.dtype.names:
+                correctionParams[field][b, j, i] = tilecp[b][field]
 
-            mysixs, tilecp = wrap_6S.get_correction_params(
-                processor_pool=processor_pool,
-                sensor=sensor,
-                atm=atm,
-                geometry_dict=geometry_dict_tile,
-                rcurves_dict=rcurves_dict,
-                aeroProfile=aeroProfile)
-
-            nbands = len(tilecp)
-            for b in range(nbands):
-                correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
-                correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
-                correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
     processor_pool.close()
     processor_pool.join()
 

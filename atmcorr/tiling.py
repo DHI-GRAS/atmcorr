@@ -208,10 +208,10 @@ def resample_correction_params(corrparams, src_transform, src_crs, dst_transform
     np.recarray
         resampled correction parameters
     """
-    nbands, nj, ni = corrparams.shape
+    nj, ni = corrparams.shape[1:]
     ntiles = nj * ni
 
-    resampled = np.empty(((nbands, ) + dst_shape), dtype=corrparams.dtype)
+    resampled = np.empty(dst_shape, dtype=corrparams.dtype)
     for field in resampled.dtype.names:
         if ntiles == 1:
             # take single value

@@ -187,7 +187,6 @@ def perform_correction(
         raise ValueError('adjCorr requires 6S instance')
 
     xa, xb, xc = (corrparams[field] for field in ['xa', 'xb', 'xc'])
-
     nbands = radiance.shape[0]
     reflectance = np.full(radiance.shape, np.nan, dtype='f4')
 
