@@ -13,7 +13,6 @@ install:
   - hash -r
   - conda config --set always_yes yes --set changeps1 no
   - conda config --add channels conda-forge
-  - cat .condarc
   - conda update -q conda
   # Useful for debugging any issues with conda
   - conda env create -f environment.yml
