@@ -2,10 +2,13 @@ import os
 import copy
 import logging
 import datetime
+import itertools
+import concurrent.futures
 import multiprocessing
 
 import numpy as np
 import dateutil
+import tqdm
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
@@ -14,6 +17,8 @@ from atmcorr.sensors import sensor_is_any
 from atmcorr.sensors import check_sensor_supported
 from atmcorr import viewing_geometry
 from atmcorr import response_curves
+from atmcorr.adjacency_correction import adjacency_correction
+from atmcorr import resampling
 
 try:
     import modis_atm.params
@@ -25,6 +30,16 @@ logger = logging.getLogger(__name__)
 
 MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
 NUM_PROCESSES = None
+
+
+def _earthdata_credentials_from_env():
+    auth = dict(
+        username=os.environ.get('EARTHDATA_USERNAME'),
+        password=os.environ.get('EARTHDATA_PASSWORD'))
+    if None in list(auth.values):
+        raise ValueError(
+            'Environment variables ERTHDATA_USERNAME and EARTHDATA_PASSWORD not set.')
+    return auth
 
 
 def main_optdict(options):
@@ -40,7 +55,7 @@ def main(
         aotMultiplier=1.0,
         mtdFile_tile=None, band_ids=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
-        earthdata_credentials={}):
+        earthdata_credentials=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -99,10 +114,13 @@ def main(
     if use_modis:
         if not HAS_MODIS:
             raise ValueError(
-                    'To download MODIS parameters, you need to '
-                    'install the `modis_atm` package.')
+                'To download MODIS parameters, you need to '
+                'install the `modis_atm` package.')
         if not earthdata_credentials:
-            raise ValueError(
+            try:
+                earthdata_credentials = _earthdata_credentials_from_env()
+            except ValueError:
+                raise ValueError(
                     'To download MODIS parameters, you need to '
                     'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
         if not os.path.isdir(modis_atm_dir):
@@ -118,11 +136,14 @@ def main(
     nbands = data.shape[0]
     if len(band_ids) != nbands:
         raise ValueError(
-                'Number of band IDs ({}) does not correspond to number of bands ({}).'
-                .format(len(band_ids), nbands))
+            'Number of band IDs ({}) does not correspond to number of bands ({}).'
+            .format(len(band_ids), nbands))
 
     if band_ids is None:
         band_ids = np.arange(nbands)
+
+    if atm is None:
+        atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
     kwargs_toa_radiance = dict(
             mtdFile=mtdFile,
@@ -134,10 +155,6 @@ def main(
         if nodata not in [0, 65536]:
             data[data == nodata] = 0
             profile['nodata'] = 0
-
-    # keep unchanged copy of atm dict
-    if atm is None:
-        atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
     # DN -> Radiance -> Reflectance
     if method == '6S':
@@ -173,9 +190,6 @@ def _main_6S(
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
-    if tileSize and adjCorr:
-        raise ValueError('Adjacency correction only works for un-tiled image (tileSize=0)')
-
     # convert to radiance
     data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
@@ -209,90 +223,135 @@ def _main_6S(
     # Structure holding the 6S correction parameters has, for each band in
     # the image, arrays of values (one for each tile)
     # of the three correction parameters
-    correctionParams = np.zeros(
+    correction_params = np.zeros(
         ((nbands, ) + tiling_shape),
         dtype=dict(names=['xa', 'xb', 'xc'], formats=(['f4'] * 3)))
+    if adjCorr:
+        adjacency_params = np.zeros(((4, nbands) + tiling_shape), dtype='f4')
 
-    nprocs = NUM_PROCESSES
-    if nprocs is None:
-        nprocs = multiprocessing.cpu_count()
-    nprocs = min((nprocs, len(rcurves_dict['rcurves'])))
-    processor_pool = multiprocessing.Pool(nprocs)
+    def _get_tile_index_iter():
+        return itertools.product(range(tiling_shape[0]), range(tiling_shape[1]))
 
-    # Get 6S correction parameters for an extent of each tile
-    atm_orig = copy.copy(atm)
-    mysixs = None
-    for j in range(tiling_shape[0]):
-        for i in range(tiling_shape[1]):
+    # retrieve MODIS parameters for all tiles
+    all_atm = []
+    if not use_modis:
+        all_atm.append(atm)
+    else:
+        for j, i in _get_tile_index_iter():
             extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
             logger.debug('tile %d,%d extent is %s', j, i, extent)
             # If MODIS atmospheric data was downloaded then use it to set
             # different atmospheric parameters for each tile
-            atm = copy.copy(atm_orig)
-            if use_modis:
-                logger.info('Retrieving MODIS atmospheric parameters')
-                atm_modis = modis_atm.params.retrieve_parameters(
-                    date=date,
-                    extent=extent,
-                    credentials=earthdata_credentials,
-                    download_dir=modis_atm_dir)
-                logger.info(atm_modis)
-                atm = atm_modis
-                for k in atm:
-                    if atm[k] is None:
-                        raise ValueError(
-                            'One or more atm parameters could not be retrieved: {}.'
-                            .format(atm))
+            logger.info('Retrieving MODIS atmospheric parameters')
+            atm_modis = modis_atm.params.retrieve_parameters(
+                date=date,
+                extent=extent,
+                credentials=earthdata_credentials,
+                download_dir=modis_atm_dir)
+            logger.info(atm_modis)
+            # check missing
+            missing = []
+            for key in atm_modis:
+                if atm_modis[key] is None:
+                    missing.append(key)
+            if missing:
+                raise ValueError(
+                    'Some atm parameters could not be retrieved ({}): {}.'
+                    .format(missing, atm_modis))
+            all_atm.append(atm_modis)
 
-            if tiling_shape == (1, 1):
-                # get angles for whole image
-                geometry_dict_tile = geometry_dict
-            else:
-                # get angles for this tile
-                geometry_dict_tile = {}
-                for key, value in geometry_dict.items():
-                    geometry_dict_tile[key] = (
-                        value[j, i] if isinstance(value, np.ndarray) else value)
+    # apply aotMultiplier
+    for atm_tile in all_atm:
+        atm_tile['AOT'] *= aotMultiplier
 
-            atm['AOT'] *= aotMultiplier
-            logger.debug('AOT: %s', atm['AOT'])
-            logger.debug('Water Vapour: %s', atm['PWV'])
-            logger.debug('Ozone: %s', atm['ozone'])
+    # extract geometry dict for each tile
+    all_geom = []
+    if tiling_shape == (1, 1):
+        # get angles for whole image
+        all_geom.append(geometry_dict)
+    else:
+        for j, i in _get_tile_index_iter():
+            # extract angles for this tile
+            geometry_dict_tile = {}
+            for key, value in geometry_dict.items():
+                geometry_dict_tile[key] = (
+                    value[j, i] if isinstance(value, np.ndarray) else value)
+            all_geom.append(geometry_dict_tile)
 
-            mysixs, tilecp = wrap_6S.get_correction_params(
-                processor_pool=processor_pool,
-                sensor=sensor,
-                atm=atm,
-                geometry_dict=geometry_dict_tile,
+    # Get 6S correction parameters for each tile
+    def _job_generator():
+        for ktile, (j, i) in enumerate(_get_tile_index_iter()):
+            atm_tile = all_atm[min(ktile, len(all_atm)-1)]
+            geom_tile = all_geom[ktile]
+            jobs = wrap_6S.generate_jobs(
+                atm=atm_tile,
+                geometry_dict=geom_tile,
                 rcurves_dict=rcurves_dict,
                 aeroProfile=aeroProfile)
+            for b, job in enumerate(jobs):
+                yield tuple(job) + (b, j, i)
 
-            nbands = len(tilecp)
-            for b in range(nbands):
-                correctionParams[b, j, i]['xa'] = tilecp[b]['xa']
-                correctionParams[b, j, i]['xb'] = tilecp[b]['xb']
-                correctionParams[b, j, i]['xc'] = tilecp[b]['xc']
-    processor_pool.close()
-    processor_pool.join()
+    njobs = tiling_shape[0] * tiling_shape[1] * nbands
+    jobs_iter = _job_generator()
+    if njobs > nbands:
+        jobs_iter = tqdm.tqdm(
+            jobs_iter, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
+    # initialize processing pool
+    nprocs = NUM_PROCESSES
+    if nprocs is None:
+        nprocs = multiprocessing.cpu_count()
+    # execute 6S jobs
+    with concurrent.futures.ProcessPoolExecutor(nprocs) as executor:
+        for tilecp, adjcoef, idx in executor.map(wrap_6S.run_sixs_job, jobs_iter):
+            b, j, i = idx
+            for field in correction_params.dtype.names:
+                correction_params[field][b, j, i] = tilecp[field]
+            if adjCorr:
+                adjacency_params[:, b, j, i] = adjcoef
+
+    # reproject parameters
     if tiling_shape == (1, 1):
         corrparams = {
-            field: correctionParams[field][:, 0, 0]
-            for field in correctionParams.dtype.names}
+            field: correction_params[field][:, 0, 0]
+            for field in correction_params.dtype.names}
+        if adjCorr:
+            adjparams = adjacency_params[:, :, 0, 0]
     else:
-        corrparams = tiling.resample_correction_params(
-            correctionParams,
-            src_transform=tiling_transform,
-            src_crs=profile['crs'],
-            dst_transform=profile['transform'],
-            dst_shape=data.shape)
+        logger.debug('resampling correction parameters')
+        # resample 6S correction parameters to image
+        corrparams = np.empty(data.shape, dtype=correction_params.dtype)
+        for field in corrparams.dtype.names:
+            corrparams[field] = resampling.resample(
+                source=correction_params[field],
+                src_transform=tiling_transform,
+                src_crs=profile['crs'],
+                dst_transform=profile['transform'],
+                dst_shape=data.shape)
+        if adjCorr:
+            # resample adjacency correction parameters to image
+            # collapse first two dimensions
+            collapsed_in = adjacency_params.reshape((-1, ) + adjacency_params.shape[2:])
+            dst_shape = (collapsed_in.shape[0], ) + data.shape[1:]
+            collapsed_out = resampling.resample(
+                source=collapsed_in,
+                src_transform=tiling_transform,
+                src_crs=profile['crs'],
+                dst_transform=profile['transform'],
+                dst_shape=dst_shape)
+            # unpack dimensions again
+            final_shape = (adjacency_params.shape[0], ) + data.shape
+            adjparams = collapsed_out.reshape(final_shape)
 
-    data = wrap_6S.perform_correction(
-        data,
-        corrparams=corrparams,
-        pixel_size=profile['transform'].a,
-        adjCorr=adjCorr,
-        mysixs=mysixs)
+    # apply 6s correction parameters
+    data = wrap_6S.perform_correction(data, corrparams)
+
+    if adjCorr:
+        # perform adjecency correction
+            data = adjacency_correction(
+                data,
+                *adjparams,
+                pixel_size=profile['transform'].a)
 
     return data
 
@@ -383,19 +442,3 @@ def _get_sensing_date(sensor, mtdFile):
         return sentinel2.metadata.get_date(mtdFile)
     else:
         raise ValueError('Unknown sensor.')
-
-
-def _landsat8_compute_radiance(infiles, mtdFile, band_ids, outfile=None):
-    import landsat8.radiance
-    if outfile is None:
-        if isinstance(infiles, (list, tuple)):
-            outdir = os.path.dirname(infiles[0])
-        else:
-            outdir = os.path.dirname(infiles)
-        outfile = os.path.join(outdir, 'l8_radiance.tif')
-    bands = [str(bid + 1) for bid in band_ids]
-    landsat8.radiance.rio_toa_radiance(
-        infiles=infiles,
-        outfile=outfile,
-        mtdfile=mtdFile,
-        bands=bands)

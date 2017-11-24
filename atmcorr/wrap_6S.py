@@ -9,8 +9,6 @@ from Py6S import AtmosCorr
 from Py6S import Wavelength
 from Py6S import Geometry
 
-from atmcorr.adjacency_correction import adjacency_correction
-
 logger = logging.getLogger(__name__)
 
 GEOMETRY_ATTRS = {
@@ -33,15 +31,12 @@ AERO_PROFILES = [
 
 
 def setup_sixs(
-        sensor,
         AOT, PWV, ozone,
         aeroProfile, geometry_dict):
     """Set up 6S instance
 
     Parameters
     ----------
-    sensor : str
-        sensor name
     AOT, PWV, ozone : float
         atmospheric constituents
     aeroProfile : str
@@ -85,7 +80,40 @@ def setup_sixs(
     return mysixs
 
 
-def run_sixs_for_wavelength(args):
+def generate_jobs(
+        atm,
+        rcurves_dict,
+        geometry_dict,
+        aeroProfile="Continental"):
+    """Sets up Py6S instance and returns job for run_sixs_for_wavelength
+
+    Parameters
+    ----------
+    atm : dict
+        atmospheric parameters
+    rcurves_dict : dict
+        sensor response curve parameters
+    geometry_dict : dict
+        viewing / Sun angles parameters
+    aeroProfile : str
+        aero profile for 6S
+    """
+    # set up SixS instance once
+    mysixs = setup_sixs(
+            atm['AOT'],
+            atm['PWV'],
+            atm['ozone'],
+            aeroProfile,
+            geometry_dict)
+
+    # Run 6S for each spectral band
+    jobs = [
+            (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
+            for rcurve in rcurves_dict['rcurves']]
+    return jobs
+
+
+def run_sixs_job(args):
     """Run sixs for a specific wavelength
 
     Parameters
@@ -101,69 +129,33 @@ def run_sixs_for_wavelength(args):
         wave length range
     rcurve : ndarray
         sensor response curve
+
+    Returns
+    -------
+    dict
+        correction parameters
+    list of float
+        adjacency correction parameters
+    list
+        arguments passed through
     """
-    mysixs, start_wv, end_wv, rcurve = args
+    mysixs, start_wv, end_wv, rcurve = args[:4]
+    moreargs = args[4:]
     mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
     mysixs.run()
     xdict = {
             'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
             'xb': mysixs.outputs.coef_xb,  # scattering term of the atmosphere
             'xc': mysixs.outputs.coef_xc}  # reflectance of atmosphere for isotropic light (albedo)
-    retvals = [
+    adjcorr_params = [
             mysixs.geometry.view_z,
             mysixs.outputs.optical_depth_total.total,
             mysixs.outputs.transmittance_global_gas.upward,
             mysixs.outputs.transmittance_total_scattering.upward]
-    return (xdict, retvals)
+    return (xdict, adjcorr_params, moreargs)
 
 
-def get_correction_params(
-        processor_pool,
-        sensor,
-        atm,
-        rcurves_dict,
-        geometry_dict,
-        aeroProfile="Continental"):
-    """Get correction parameters
-
-    Parameters
-    ----------
-    processor_pool : multiprocessing.Pool
-        processor pool
-    sensor : str
-        sensor name
-    atm : dict
-        atmospheric parameters
-    rcurves_dict : dict
-        sensor response curve parameters
-    geometry_dict : dict
-        viewing / Sun angles parameters
-    aeroProfile : str
-        aero profile for 6S
-    """
-    # set up SixS instance once
-    mysixs = setup_sixs(
-            sensor,
-            atm['AOT'],
-            atm['PWV'],
-            atm['ozone'],
-            aeroProfile,
-            geometry_dict)
-
-    # Run 6S for each spectral band
-    jobs = [
-            (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
-            for rcurve in rcurves_dict['rcurves']]
-    output = []
-    mysixs = None
-    for res in processor_pool.imap(run_sixs_for_wavelength, jobs):
-        output.append(res[0])
-        mysixs = res[1]
-    return mysixs, output
-
-
-def perform_correction(
-        radiance, corrparams, pixel_size, radius=1, adjCorr=False, mysixs=None):
+def perform_correction(radiance, corrparams):
     """Perform atmospheric correction
 
     Parameters
@@ -173,21 +165,8 @@ def perform_correction(
     corrparams : recarray or dict of float
         correction parameters
         fields/keys: xa, xb, xc
-    pixel_size : int
-        pixel size
-    radius : int
-        radius
-    adjCorr : bool
-        do adjacency correct
-    mysixs : SixS instance, optional
-        SixS model
-        required for adjCorr
     """
-    if adjCorr and mysixs is None:
-        raise ValueError('adjCorr requires 6S instance')
-
     xa, xb, xc = (corrparams[field] for field in ['xa', 'xb', 'xc'])
-
     nbands = radiance.shape[0]
     reflectance = np.full(radiance.shape, np.nan, dtype='f4')
 
@@ -203,13 +182,4 @@ def perform_correction(
             # safe to ignore: NaN elements remain NaN
             refl_band[refl_band < 0] = 0
         reflectance[i] = refl_band
-
-    # Perform adjecency correction if required
-    if adjCorr:
-        for i in range(nbands):
-            reflectance[i] = adjacency_correction(
-                    reflectance[i],
-                    pixel_size,
-                    mysixs,
-                    radius)
     return reflectance
