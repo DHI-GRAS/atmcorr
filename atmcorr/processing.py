@@ -292,10 +292,7 @@ def _main_6S(
                 yield tuple(job) + (b, j, i)
 
     njobs = tiling_shape[0] * tiling_shape[1] * nbands
-    jobs_iter = _job_generator()
-    if njobs > nbands:
-        jobs_iter = tqdm.tqdm(
-            jobs_iter, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
+    pbarkw = dict(total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
     nprocs = NUM_PROCESSES
@@ -303,7 +300,9 @@ def _main_6S(
         nprocs = multiprocessing.cpu_count()
     # execute 6S jobs
     with concurrent.futures.ProcessPoolExecutor(nprocs) as executor:
-        for tilecp, adjcoef, idx in executor.map(wrap_6S.run_sixs_job, jobs_iter):
+        for tilecp, adjcoef, idx in tqdm.tqdm(
+                executor.map(wrap_6S.run_sixs_job, _job_generator()),
+                **pbarkw):
             b, j, i = idx
             for field in correction_params.dtype.names:
                 correction_params[field][b, j, i] = tilecp[field]
