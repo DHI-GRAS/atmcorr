@@ -3,6 +3,7 @@ import copy
 import logging
 import datetime
 import itertools
+import concurrent.futures
 import multiprocessing
 
 import numpy as np
@@ -300,18 +301,14 @@ def _main_6S(
     nprocs = NUM_PROCESSES
     if nprocs is None:
         nprocs = multiprocessing.cpu_count()
-    pool = multiprocessing.Pool(nprocs)
     # execute 6S jobs
-    for tilecp, adjcoef, idx in pool.imap(
-            wrap_6S.run_sixs_job, jobs_iter):
-        b, j, i = idx
-        for field in correction_params.dtype.names:
-            correction_params[field][b, j, i] = tilecp[field]
-        if adjCorr:
-            adjacency_params[:, b, j, i] = adjcoef
-    # close pool
-    pool.close()
-    pool.join()
+    with concurrent.futures.ProcessPoolExecutor(nprocs) as executor:
+        for tilecp, adjcoef, idx in executor.map(wrap_6S.run_sixs_job, jobs_iter):
+            b, j, i = idx
+            for field in correction_params.dtype.names:
+                correction_params[field][b, j, i] = tilecp[field]
+            if adjCorr:
+                adjacency_params[:, b, j, i] = adjcoef
 
     # reproject parameters
     if tiling_shape == (1, 1):
