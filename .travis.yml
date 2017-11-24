@@ -13,9 +13,9 @@ install:
   - hash -r
   - conda config --set always_yes yes --set changeps1 no
   - conda config --add channels conda-forge
+  - cat .condarc
   - conda update -q conda
   # Useful for debugging any issues with conda
-  - conda info -a
   - conda env create -f environment.yml
   - source activate atmcorr
   - conda install rasterio -c conda-forge/label/dev
@@ -24,7 +24,8 @@ install:
   - pushd atmcorr_testdata
   - pip install .
   - popd
-  - pip install -e .[test]
+  - pip install -e .
+  - conda info -a
 
 script:
     python -m pytest -v --runslow
