@@ -11,7 +11,15 @@ composition from MODIS.
 
 ```
 pip install -e .
-py.test -v
+pytest -v
 ```
 
 Full testing requires that you install the [`atmcorr_testdata`](https://github.com/DHI-GRAS/atmcorr_testdata) package.
+
+
+## Travis & Docker
+
+```
+docker build -t dhigras/atmcorr-env -f Dockerfile.environment .
+docker push dhigras/atmcorr-env
+```
