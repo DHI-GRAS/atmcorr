@@ -4,6 +4,7 @@ channels:
 dependencies:
     - python=3
     - gdal
+    - rasterio
     - numpy
     - scipy
     - pandas
