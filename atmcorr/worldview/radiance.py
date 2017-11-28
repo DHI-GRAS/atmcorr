@@ -45,5 +45,6 @@ def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
         dndata -= dosDN
 
     radata = radiance.dn_to_radiance(dndata, mtdFile, band_ids=band_ids)
-    radata[radata < 0] = np.nan
+    with np.errstate(invalid='ignore'):
+        radata[radata < 0] = np.nan
     return np.rollaxis(radata, 2, 0)
