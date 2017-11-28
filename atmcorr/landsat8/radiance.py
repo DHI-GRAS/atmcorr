@@ -3,12 +3,12 @@ import numpy as np
 from satmeta.l8 import meta as l8meta
 
 
-def dn_to_radiance(data, mtdFile, band_ids=None):
+def dn_to_radiance(dndata, mtdFile, band_ids=None):
     """Compute radiance from digital numbers
 
     Parameters
     ----------
-    data : ndarray shape (nbands, ny, nx)
+    dndata : ndarray shape (nbands, ny, nx)
         digital numbers data
     mtdFile : str
         path to metadata file
@@ -32,7 +32,7 @@ def dn_to_radiance(data, mtdFile, band_ids=None):
     bias = np.asarray(rescaling['RADIANCE']['ADD'], 'float32')[band_ids]
     gain = np.asarray(rescaling['RADIANCE']['MULT'], 'float32')[band_ids]
     radiance = (
-        data.astype('float32') *
+        dndata.astype('float32') *
         gain[:, np.newaxis, np.newaxis] +
         bias[:, np.newaxis, np.newaxis])
     return radiance

@@ -2,7 +2,8 @@ from dg_calibration import reflectance
 
 
 def toa_reflectance(radata, mtdFile, band_ids):
-    """Estimate toa reflectance of radiometric data ignoring atmospheric, topographic and BRDF effects
+    """Estimate toa reflectance from radiometric data
+       ignoring atmospheric, topographic and BRDF effects
 
     Parameters
     ----------

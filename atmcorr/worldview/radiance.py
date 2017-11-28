@@ -6,7 +6,7 @@ from dg_calibration import radiance
 
 
 def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
-    """Compute TOA radiance from DigitalGlobe digital numbers data
+    """Compute TOA radiance from DigitalGlobe digital numbers
 
     Parameters
     ----------
@@ -45,5 +45,5 @@ def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
         dndata -= dosDN
 
     radata = radiance.dn_to_radiance(dndata, mtdFile, band_ids=band_ids)
-    radata[radata < 0] = 0
+    radata[radata < 0] = np.nan
     return np.rollaxis(radata, 2, 0)
