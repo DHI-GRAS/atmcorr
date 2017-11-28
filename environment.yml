@@ -18,3 +18,4 @@ dependencies:
         - https://github.com/DHI-GRAS/yamlconfig/archive/master.zip
         - https://github.com/DHI-GRAS/satmeta/archive/master.zip
         - https://github.com/DHI-GRAS/sensor_response_curves/archive/master.zip
+        - https://github.com/DHI-GRAS/dg-calibration/archive/master.zip
