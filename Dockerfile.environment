@@ -3,7 +3,7 @@ FROM continuumio/miniconda:latest
 MAINTAINER Jonas Sølvsteen <josl@dhigroup.com>
 
 # install GDAL
-RUN apt-get update && apt-get install libgdal gdal-dev
+RUN apt-get update && apt-get --yes --force-yes install libgdal-dev
 
 # create environment
 COPY environment.yml .
