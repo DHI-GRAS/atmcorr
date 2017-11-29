@@ -10,17 +10,17 @@ import numpy as np
 import dateutil
 import tqdm
 
-from atmcorr import wrap_6S
 from atmcorr import tiling
+from atmcorr import wrap_6S
 from atmcorr import metadata
 from atmcorr import radiance
-from atmcorr.sensors import sensor_is
-from atmcorr.sensors import sensor_is_any
-from atmcorr.sensors import check_sensor_supported
-from atmcorr import viewing_geometry
-from atmcorr import response_curves
-from atmcorr.adjacency_correction import adjacency_correction
 from atmcorr import resampling
+from atmcorr import reflectance
+from atmcorr import response_curves
+from atmcorr import viewing_geometry
+from atmcorr.sensors import sensor_is
+from atmcorr.sensors import check_sensor_supported
+from atmcorr.adjacency_correction import adjacency_correction
 
 try:
     import modis_atm.params
@@ -170,10 +170,13 @@ def main(
         doDOS = (method == 'DOS')
         if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = reflectance.radiance_to_reflectance(
+                data, mtdFile, sensor, band_ids=band_ids)
         else:
-            data = radiance.dn_to_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = radiance.dn_to_radiance(
+                data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+            data = reflectance.radiance_to_reflectance(
+                data, mtdFile, sensor, band_ids=band_ids)
     elif method == 'RAD':
         doDOS = False
         data = radiance.dn_to_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
@@ -193,7 +196,7 @@ def _main_6S(
         use_modis, modis_atm_dir, earthdata_credentials):
 
     # convert to radiance
-    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
@@ -355,21 +358,6 @@ def _main_6S(
                 pixel_size=profile['transform'].a)
 
     return data
-
-
-def _toa_reflectance(data, mtdfile, sensor, band_ids):
-    commonkw = dict(data=data, mtdfile=mtdfile)
-    if sensor_is_any(sensor, 'WV', 'WV_4band'):
-        from atmcorr import worldview
-        return worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
-    elif sensor_is(sensor, 'PHR'):
-        from atmcorr import pleiades
-        return pleiades.reflectance.toa_reflectance(**commonkw)
-    elif sensor_is(sensor, 'S2'):
-        from atmcorr import sentinel2
-        return sentinel2.reflectance.toa_reflectance(**commonkw)
-    else:
-        raise NotImplementedError(sensor)
 
 
 def _copy_check_profile(profile):
