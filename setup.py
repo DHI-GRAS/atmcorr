@@ -2,7 +2,7 @@ from setuptools import setup, find_packages
 
 setup(
     name='atmcorr',
-    version='0.12',
+    version='0.13',
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
@@ -13,11 +13,10 @@ setup(
     atmcorr=atmcorr.scripts.atmcorr:cli
     """,
     install_requires=[
-        'rasterio',
-        'numpy>=1.11.1',
-        'scipy>=0.17.1',
+        'dg_calibration',
         'sensor_response_curves>=0.4',
         'satmeta'],
     dependency_links=[
+        'https://github.com/DHI-GRAS/dg-calibration/archive/master.zip',
         'https://github.com/DHI-GRAS/sensor_response_curves/archive/v0.4.tar.gz#egg=sensor_response_curves-0.4',
         'https://github.com/DHI-GRAS/satmeta/archive/v0.11.tar.gz#egg=satmeta-0.11'])
