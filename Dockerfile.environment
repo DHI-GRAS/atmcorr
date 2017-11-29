@@ -1,0 +1,18 @@
+FROM continuumio/miniconda:latest
+
+MAINTAINER Jonas Sølvsteen <josl@dhigroup.com>
+
+# install GDAL
+RUN apt-get update && apt-get --yes --force-yes install libgdal-dev
+
+# create environment
+COPY environment.yml .
+RUN conda env create -f environment.yml && conda clean -tipsy
+
+RUN conda config --add channels conda-forge && \
+    conda install -n atmcorr -c conda-forge/label/dev rasterio && \
+    conda install -n atmcorr pytest
+
+# activate environment on login
+RUN touch /root/.bashrc && echo 'source activate atmcorr' >> /root/.bashrc
+SHELL ["/bin/bash", "-l", "-c"]
