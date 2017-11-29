@@ -8,7 +8,7 @@ from atmcorr.pleiades import calibration
 logger = logging.getLogger(__name__)
 
 
-def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
+def dn_to_radiance(dndata, mtdFile, band_ids, doDOS=False):
     """Apply radiometric correction to Pleadis image,
        with DOS atmospheric correction optional.
     """
