@@ -14,6 +14,7 @@ dependencies:
     - pyproj
     - shapely
     - tqdm
+    - pandas  # sensor response curves
     - pip:
         - https://github.com/DHI-GRAS/yamlconfig/archive/master.zip
         - https://github.com/DHI-GRAS/satmeta/archive/master.zip
