@@ -10,11 +10,9 @@ composition from MODIS.
 ## Testing
 
 ```
-pip install -e .
+pip install -e .[test]
 pytest -v
 ```
-
-Full testing requires that you install the [`atmcorr_testdata`](https://github.com/DHI-GRAS/atmcorr_testdata) package.
 
 
 ## Travis & Docker

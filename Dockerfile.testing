@@ -4,13 +4,6 @@ MAINTAINER Jonas Sølvsteen <josl@dhigroup.com>
 
 WORKDIR /work
 
-COPY private_dependencies private_dependencies
-RUN ls -l private_dependencies && \
-    for dir in private_dependencies/*/; do \
-      echo $dir && \
-      pip install -q $dir; \
-    done
-
 COPY . atmcorr
 RUN ls -l atmcorr
 RUN pip install -q ./atmcorr

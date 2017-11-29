@@ -6,8 +6,6 @@ services:
 
 before_install:
   - docker pull dhigras/atmcorr-env:latest
-  - mkdir private_dependencies
-  - git clone git@github.com:DHI-GRAS/atmcorr_testdata.git private_dependencies/atmcorr_testdata
 
 install:
   - docker build -t testenv -f Dockerfile.testing .
