@@ -12,6 +12,7 @@ import tqdm
 
 from atmcorr import wrap_6S
 from atmcorr import tiling
+from atmcorr import metadata
 from atmcorr.sensors import sensor_is
 from atmcorr.sensors import sensor_is_any
 from atmcorr.sensors import check_sensor_supported
@@ -127,7 +128,7 @@ def main(
             os.makedirs(modis_atm_dir)
 
     if date is None:
-        date = _get_sensing_date(sensor, mtdFile)
+        date = metadata.get_date(sensor, mtdFile)
     elif isinstance(date, datetime.datetime):
         pass
     else:
@@ -424,20 +425,3 @@ def _copy_check_profile(profile):
         raise ValueError(
             'Metadata dict `profile` is missing information: \'{}\''.format(missing))
     return profile
-
-
-def _get_sensing_date(sensor, mtdFile):
-    if sensor_is_any(sensor, 'WV', 'WV_4band'):
-        from atmcorr import worldview
-        return worldview.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, 'L7L8'):
-        from atmcorr import landsat8
-        return landsat8.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, "PHR"):
-        from atmcorr import pleiades
-        return pleiades.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, 'S2'):
-        from atmcorr import sentinel2
-        return sentinel2.metadata.get_date(mtdFile)
-    else:
-        raise ValueError('Unknown sensor.')
