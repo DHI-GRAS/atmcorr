@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from atmcorr import dos
-from atmcorr.radiance import pleiades_calibration as calibration
+from atmcorr.metadata import pleiades as metadata
 
 logger = logging.getLogger(__name__)
 
@@ -12,7 +12,7 @@ def dn_to_radiance(dndata, mtdFile, band_ids, doDOS=False):
     """Apply radiometric correction to Pleadis image,
        with DOS atmospheric correction optional.
     """
-    gain, bias = calibration.get_gain_bias_PHR1(mtdFile)
+    gain, bias = metadata.get_gain_bias_PHR1(mtdFile)
 
     gain = [gain[i] for i in band_ids]
     bias = [bias[i] for i in band_ids]
