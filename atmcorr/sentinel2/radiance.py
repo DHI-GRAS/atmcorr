@@ -7,12 +7,12 @@ import satmeta.s2.meta as s2meta
 logger = logging.getLogger(__name__)
 
 
-def toa_reflectance_to_radiance(data, mtdFile, mtdFile_tile, band_ids):
+def toa_reflectance_to_radiance(dndata, mtdFile, mtdFile_tile, band_ids):
     """Method taken from the bottom of http://s2tbx.telespazio-vega.de/sen2three/html/r2rusage.html
 
     Parameters
     ----------
-    data : ndarray shape(nbands, ny, nx)
+    dndata : ndarray shape(nbands, ny, nx)
         input data
     mtdFile : str
         path to metadata file
@@ -40,8 +40,8 @@ def toa_reflectance_to_radiance(data, mtdFile, mtdFile_tile, band_ids):
 
     # Convert to radiance
     factor = irradiance * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
-    radiance = data.astype('f4')
-    for i in range(data.shape[0]):
+    radiance = dndata.astype('f4')
+    for i in range(dndata.shape[0]):
         radiance[i] /= rc
         radiance[i] *= factor[i]
     return radiance

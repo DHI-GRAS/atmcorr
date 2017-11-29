@@ -1,26 +1,22 @@
-import numpy as np
-
-from atmcorr.worldview import calibration
+from dg_calibration import reflectance
 
 
-def toa_reflectance_WV(data, mtdfile, band_ids):
-    """Estimate toa reflectance of radiometric WV data ignoric atmospheric, topographic and
-       BRDF effects.
+def toa_reflectance(radata, mtdFile, band_ids):
+    """Estimate toa reflectance from radiometric data
+       ignoring atmospheric, topographic and BRDF effects
 
-    Notes
+    Parameters
+    ----------
+    radata : ndarray shape (nbands, ny, nx)
+        radiance data
+    mtdFile : str
+        path to IMD metadata file
+    band_ids : sequence of int
+        band IDs
+
+    Returns
     -------
-    Based on http://www.digitalglobe.com/sites/default/files/
-    Radiometric_Use_of_WorldView-2_Imagery%20%281%29.pdf
-
-    Also works with GeoEye-1 and might work with other Digital Globe
-    providers after a small modification
+    ndarray
+        reflectance
     """
-    des, ssi, sza = calibration.get_earth_sun_distance(mtdfile)
-
-    # apply the radiometric correction factors to input image
-    reflectance = np.zeros(data.shape)
-    nbands = data.shape[0]
-    for i in range(nbands):
-        reflectance[i] = (data[i] * des**2 * np.pi) / (ssi[i] * np.cos(sza))
-
-    return reflectance
+    return reflectance.radiance_to_reflectance(radata, mtdFile, band_ids=band_ids)

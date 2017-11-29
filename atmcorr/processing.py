@@ -356,13 +356,13 @@ def _main_6S(
 
 
 def _toa_radiance(
-        data, sensor, mtdFile, band_ids,
+        dndata, sensor, mtdFile, band_ids,
         doDOS=False, mtdFile_tile=None):
     """Compute TOA radiance
 
     Parameters
     ----------
-    data : ndarray shape(nbands, ny, nx)
+    dndata : ndarray shape(nbands, ny, nx)
         input data
     sensor : str
         sensor name
@@ -378,13 +378,13 @@ def _toa_radiance(
         required for Sentinel 2
     """
     commonkw = dict(
-        data=data,
+        dndata=dndata,
         mtdFile=mtdFile,
         doDOS=doDOS,
         band_ids=band_ids)
     if sensor_is_any(sensor, 'WV', 'WV_4band'):
         from atmcorr import worldview
-        return worldview.radiance.toa_radiance(sensor=sensor, **commonkw)
+        return worldview.radiance.toa_radiance(**commonkw)
     elif sensor_is(sensor, 'PHR'):
         from atmcorr import pleiades
         return pleiades.radiance.toa_radiance(**commonkw)

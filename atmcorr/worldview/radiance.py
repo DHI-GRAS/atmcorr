@@ -1,35 +1,50 @@
 import numpy as np
 
 from atmcorr import dos
-from atmcorr.worldview import calibration
+
+from dg_calibration import radiance
 
 
-def toa_radiance(data, mtdFile, sensor, band_ids, doDOS=False):
-    """Compute TOA radiance for WV"""
+def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
+    """Compute TOA radiance from DigitalGlobe digital numbers
 
-    gain = calibration.GAIN[sensor][:-1]
-    bias = calibration.BIAS[sensor][:-1]
-    effectivebw, abscalfactor = calibration.get_effectivebw_abscalfactor_WV(mtdFile)
-    scalefactor = abscalfactor / effectivebw * (2 - gain)
-    bias_bands = bias[band_ids]
-    scalefactor_bands = scalefactor[band_ids]
+    Parameters
+    ----------
+    dndata : ndarray shape (nbands, ny, nx)
+        digital numbers data
+    mtdFile : str
+        path to IMD metadata file
+    band_ids : sequence of int
+        band IDs
+    doDOS : bool
+        perform dark-object-subtraction before
+    """
+    nbands = dndata.shape[0]
+    if nbands != len(band_ids):
+        raise ValueError(
+            'First dimension in dndata ({}) must have same size as band_ids ({}).'
+            .format(nbands, len(band_ids)))
 
-    nbands = data.shape[0]
+    # roll band axis last for broadcasting
+    dndata = np.rollaxis(dndata, 0, 3)
 
     # perform dark object substraction
     if doDOS:
-        dosDN = dos.do_dos(data)
+        dosDN = dos.do_dos(dndata)
     else:
         dosDN = np.zeros(nbands)
 
-    # apply the radiometric correction factors to input image
-    radiance = np.zeros(data.shape, dtype='f4')
-    for i in range(nbands):
-        rawdata = data[i]
-        good = rawdata > dosDN[i]
-        good &= rawdata < 65536
-        gooddata = (rawdata[good] - dosDN[i]) * scalefactor_bands[i] - bias_bands[i]
-        gooddata[gooddata < 0] = 0
-        radiance[i, good] = gooddata
+    dndata = dndata.astype('float32')
 
-    return radiance
+    good = dndata > dosDN
+    good &= dndata < 65536
+
+    dndata[~good] = np.nan
+
+    if doDOS:
+        dndata -= dosDN
+
+    radata = radiance.dn_to_radiance(dndata, mtdFile, band_ids=band_ids)
+    with np.errstate(invalid='ignore'):
+        radata[radata < 0] = np.nan
+    return np.rollaxis(radata, 2, 0)
