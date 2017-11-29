@@ -10,15 +10,17 @@ import numpy as np
 import dateutil
 import tqdm
 
-from atmcorr import wrap_6S
 from atmcorr import tiling
-from atmcorr.sensors import sensor_is
-from atmcorr.sensors import sensor_is_any
-from atmcorr.sensors import check_sensor_supported
-from atmcorr import viewing_geometry
-from atmcorr import response_curves
-from atmcorr.adjacency_correction import adjacency_correction
+from atmcorr import wrap_6S
+from atmcorr import metadata
+from atmcorr import radiance
 from atmcorr import resampling
+from atmcorr import reflectance
+from atmcorr import response_curves
+from atmcorr import viewing_geometry
+from atmcorr.sensors import sensor_is
+from atmcorr.sensors import check_sensor_supported
+from atmcorr.adjacency_correction import adjacency_correction
 
 try:
     import modis_atm.params
@@ -127,7 +129,7 @@ def main(
             os.makedirs(modis_atm_dir)
 
     if date is None:
-        date = _get_sensing_date(sensor, mtdFile)
+        date = metadata.get_date(sensor, mtdFile)
     elif isinstance(date, datetime.datetime):
         pass
     else:
@@ -168,13 +170,16 @@ def main(
         doDOS = (method == 'DOS')
         if sensor_is(sensor, 'S2'):
             # S2 data is provided in L1C meaning in TOA reflectance
-            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = reflectance.radiance_to_reflectance(
+                data, mtdFile, sensor, band_ids=band_ids)
         else:
-            data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = _toa_reflectance(data, mtdFile, sensor, band_ids=band_ids)
+            data = radiance.dn_to_radiance(
+                data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+            data = reflectance.radiance_to_reflectance(
+                data, mtdFile, sensor, band_ids=band_ids)
     elif method == 'RAD':
         doDOS = False
-        data = _toa_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
+        data = radiance.dn_to_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
     else:
         raise ValueError('Unknown method \'{}\'.'.format(method))
 
@@ -191,7 +196,7 @@ def _main_6S(
         use_modis, modis_atm_dir, earthdata_credentials):
 
     # convert to radiance
-    data = _toa_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
     if not np.any(data):
         raise RuntimeError('Data is all zeros.')
 
@@ -355,67 +360,6 @@ def _main_6S(
     return data
 
 
-def _toa_radiance(
-        dndata, sensor, mtdFile, band_ids,
-        doDOS=False, mtdFile_tile=None):
-    """Compute TOA radiance
-
-    Parameters
-    ----------
-    dndata : ndarray shape(nbands, ny, nx)
-        input data
-    sensor : str
-        sensor name
-    mtdFile : str
-        path to metadata file
-    band_ids : list of int
-        band IDs of original product contained in array
-        0-based
-    doDOS : bool
-        do a dark object subtraction
-    mtdFile_tile : str
-        tile metadata file
-        required for Sentinel 2
-    """
-    commonkw = dict(
-        dndata=dndata,
-        mtdFile=mtdFile,
-        doDOS=doDOS,
-        band_ids=band_ids)
-    if sensor_is_any(sensor, 'WV', 'WV_4band'):
-        from atmcorr import worldview
-        return worldview.radiance.toa_radiance(**commonkw)
-    elif sensor_is(sensor, 'PHR'):
-        from atmcorr import pleiades
-        return pleiades.radiance.toa_radiance(**commonkw)
-    elif sensor_is(sensor, 'S2'):
-        commonkw.pop('doDOS')
-        from atmcorr import sentinel2
-        return sentinel2.radiance.toa_reflectance_to_radiance(
-            mtdFile_tile=mtdFile_tile, **commonkw)
-    elif sensor_is(sensor, 'L8'):
-        commonkw.pop('doDOS')
-        from atmcorr import landsat8
-        return landsat8.radiance.dn_to_radiance(**commonkw)
-    else:
-        raise NotImplementedError(sensor)
-
-
-def _toa_reflectance(data, mtdfile, sensor, band_ids):
-    commonkw = dict(data=data, mtdfile=mtdfile)
-    if sensor_is_any(sensor, 'WV', 'WV_4band'):
-        from atmcorr import worldview
-        return worldview.reflectance.toa_reflectance(band_ids=band_ids, **commonkw)
-    elif sensor_is(sensor, 'PHR'):
-        from atmcorr import pleiades
-        return pleiades.reflectance.toa_reflectance(**commonkw)
-    elif sensor_is(sensor, 'S2'):
-        from atmcorr import sentinel2
-        return sentinel2.reflectance.toa_reflectance(**commonkw)
-    else:
-        raise NotImplementedError(sensor)
-
-
 def _copy_check_profile(profile):
     profile = copy.deepcopy(profile)
     required = {'nodata', 'transform', 'crs'}
@@ -424,20 +368,3 @@ def _copy_check_profile(profile):
         raise ValueError(
             'Metadata dict `profile` is missing information: \'{}\''.format(missing))
     return profile
-
-
-def _get_sensing_date(sensor, mtdFile):
-    if sensor_is_any(sensor, 'WV', 'WV_4band'):
-        from atmcorr import worldview
-        return worldview.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, 'L7L8'):
-        from atmcorr import landsat8
-        return landsat8.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, "PHR"):
-        from atmcorr import pleiades
-        return pleiades.metadata.get_date(mtdFile)
-    elif sensor_is(sensor, 'S2'):
-        from atmcorr import sentinel2
-        return sentinel2.metadata.get_date(mtdFile)
-    else:
-        raise ValueError('Unknown sensor.')

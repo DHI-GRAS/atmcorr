@@ -5,7 +5,7 @@ from atmcorr import dos
 from dg_calibration import radiance
 
 
-def toa_radiance(dndata, mtdFile, band_ids, doDOS=False):
+def dn_to_radiance(dndata, mtdFile, band_ids, doDOS=False):
     """Compute TOA radiance from DigitalGlobe digital numbers
 
     Parameters
