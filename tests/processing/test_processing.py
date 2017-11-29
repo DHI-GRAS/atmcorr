@@ -5,7 +5,7 @@ import pytest
 
 from atmcorr import processing
 
-from . import testdata
+from .data import MTDFILES
 
 
 def _get_inputs():
@@ -16,7 +16,7 @@ def _get_inputs():
             0, np.iinfo('uint16').max,
             size=(nbands, ny, nx),
             dtype='uint16')
-    mtdFile = testdata.mtdfiles['WV2']
+    mtdFile = MTDFILES['WV02.imd']
     profile = dict(
             width=nx, height=ny,
             crs=rasterio.crs.CRS({'init': 'epsg:32640'}),
