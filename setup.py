@@ -7,7 +7,6 @@ setup(
     author='Jonas Solvsteen',
     author_email='josl@dhi-gras.com',
     packages=find_packages(),
-    include_package_data=True,
     entry_points="""
     [console_scripts]
     atmcorr=atmcorr.scripts.atmcorr:cli
