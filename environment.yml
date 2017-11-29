@@ -7,12 +7,11 @@ dependencies:
     - rasterio
     - numpy
     - scipy
-    - pandas
     - click
     - ruamel.yaml
     - Py6S
-    - pyproj
     - lxml
+    - pyproj
     - shapely
     - tqdm
     - pip:
