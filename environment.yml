@@ -14,6 +14,7 @@ dependencies:
     - pyproj
     - lxml
     - shapely
+    - tqdm
     - pip:
         - https://github.com/DHI-GRAS/yamlconfig/archive/master.zip
         - https://github.com/DHI-GRAS/satmeta/archive/master.zip
