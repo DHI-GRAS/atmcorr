@@ -3,7 +3,7 @@ import logging
 import numpy as np
 
 from atmcorr import dos
-from atmcorr.pleiades import calibration
+from atmcorr.radiance import pleiades_calibration as calibration
 
 logger = logging.getLogger(__name__)
 
