@@ -154,32 +154,41 @@ def main(
             data[data == nodata] = 0
             profile['nodata'] = 0
 
-    # DN -> Radiance -> Reflectance
-    data = _main_6S(
+    # DN -> Radiance
+    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
+    if not np.any(data):
+        raise RuntimeError('Data is all zeros.')
+
+    # Radiance -> Reflectance
+    corrparams, adjparams = _get_corrparams(
             data, profile, band_ids, sensor, date,
             mtdFile, mtdFile_tile,
             atm, kwargs_toa_radiance, tileSize,
             adjCorr, aotMultiplier, aeroProfile,
             use_modis, modis_atm_dir, earthdata_credentials)
 
+    # apply 6s correction parameters
+    data = wrap_6S.perform_correction(data, corrparams)
+
+    if adjCorr:
+        # perform adjecency correction
+            data = adjacency_correction(
+                data, *adjparams,
+                pixel_size=profile['transform'].a)
+
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
     return data, profile
 
 
-def _main_6S(
-        data, profile, band_ids, sensor, date,
+def _get_corrparams(
+        datashape, profile, band_ids, sensor, date,
         mtdFile, mtdFile_tile,
         atm, kwargs_toa_radiance, tileSize,
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
-    # convert to radiance
-    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
-    if not np.any(data):
-        raise RuntimeError('Data is all zeros.')
-
-    nbands, height, width = data.shape
+    nbands, height, width = datashape
 
     if tileSize:
         tiling_transform, tiling_shape = tiling.get_tiled_transform_shape(
@@ -303,19 +312,19 @@ def _main_6S(
     else:
         logger.debug('resampling correction parameters')
         # resample 6S correction parameters to image
-        corrparams = np.empty(data.shape, dtype=correction_params.dtype)
+        corrparams = np.empty(datashape, dtype=correction_params.dtype)
         for field in corrparams.dtype.names:
             corrparams[field] = resampling.resample(
                 source=correction_params[field],
                 src_transform=tiling_transform,
                 src_crs=profile['crs'],
                 dst_transform=profile['transform'],
-                dst_shape=data.shape)
+                dst_shape=datashape)
         if adjCorr:
             # resample adjacency correction parameters to image
             # collapse first two dimensions
             collapsed_in = adjacency_params.reshape((-1, ) + adjacency_params.shape[2:])
-            dst_shape = (collapsed_in.shape[0], ) + data.shape[1:]
+            dst_shape = (collapsed_in.shape[0], ) + datashape[1:]
             collapsed_out = resampling.resample(
                 source=collapsed_in,
                 src_transform=tiling_transform,
@@ -323,22 +332,10 @@ def _main_6S(
                 dst_transform=profile['transform'],
                 dst_shape=dst_shape)
             # unpack dimensions again
-            final_shape = (adjacency_params.shape[0], ) + data.shape
+            final_shape = (adjacency_params.shape[0], ) + datashape
             adjparams = collapsed_out.reshape(final_shape)
 
-    print(corrparams)
-
-    # apply 6s correction parameters
-    data = wrap_6S.perform_correction(data, corrparams)
-
-    if adjCorr:
-        # perform adjecency correction
-            data = adjacency_correction(
-                data,
-                *adjparams,
-                pixel_size=profile['transform'].a)
-
-    return data
+    return corrparams, adjparams
 
 
 def _copy_check_profile(profile):
