@@ -15,10 +15,8 @@ from atmcorr import wrap_6S
 from atmcorr import metadata
 from atmcorr import radiance
 from atmcorr import resampling
-from atmcorr import reflectance
 from atmcorr import response_curves
 from atmcorr import viewing_geometry
-from atmcorr.sensors import sensor_is
 from atmcorr.sensors import check_sensor_supported
 from atmcorr.adjacency_correction import adjacency_correction
 
@@ -38,7 +36,7 @@ def _earthdata_credentials_from_env():
     auth = dict(
         username=os.environ.get('EARTHDATA_USERNAME'),
         password=os.environ.get('EARTHDATA_PASSWORD'))
-    if None in list(auth.values):
+    if None in list(auth.values()):
         raise ValueError(
             'Environment variables ERTHDATA_USERNAME and EARTHDATA_PASSWORD not set.')
     return auth
@@ -50,7 +48,7 @@ def main_optdict(options):
 
 def main(
         data, profile,
-        sensor, mtdFile, method,
+        sensor, mtdFile,
         aeroProfile, atm={},
         tileSize=0,
         adjCorr=True,
@@ -70,8 +68,6 @@ def main(
         see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
         path to mtdFile file
-    method : str
-        6S, RAD, DOS, TOA (same as DOS)
     atm : dict, optional
         atmospheric parameters
     aeroProfile : str
@@ -136,7 +132,7 @@ def main(
         date = dateutil.parser.parse(date)
 
     nbands = data.shape[0]
-    if len(band_ids) != nbands:
+    if band_ids is not None and len(band_ids) != nbands:
         raise ValueError(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
             .format(len(band_ids), nbands))
@@ -159,29 +155,12 @@ def main(
             profile['nodata'] = 0
 
     # DN -> Radiance -> Reflectance
-    if method == '6S':
-        data = _main_6S(
-                data, profile, band_ids, sensor, date,
-                mtdFile, mtdFile_tile,
-                atm, kwargs_toa_radiance, tileSize,
-                adjCorr, aotMultiplier, aeroProfile,
-                use_modis, modis_atm_dir, earthdata_credentials)
-    elif method in ['DOS', 'TOA']:
-        doDOS = (method == 'DOS')
-        if sensor_is(sensor, 'S2'):
-            # S2 data is provided in L1C meaning in TOA reflectance
-            data = reflectance.radiance_to_reflectance(
-                data, mtdFile, sensor, band_ids=band_ids)
-        else:
-            data = radiance.dn_to_radiance(
-                data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = reflectance.radiance_to_reflectance(
-                data, mtdFile, sensor, band_ids=band_ids)
-    elif method == 'RAD':
-        doDOS = False
-        data = radiance.dn_to_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-    else:
-        raise ValueError('Unknown method \'{}\'.'.format(method))
+    data = _main_6S(
+            data, profile, band_ids, sensor, date,
+            mtdFile, mtdFile_tile,
+            atm, kwargs_toa_radiance, tileSize,
+            adjCorr, aotMultiplier, aeroProfile,
+            use_modis, modis_atm_dir, earthdata_credentials)
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
@@ -346,6 +325,8 @@ def _main_6S(
             # unpack dimensions again
             final_shape = (adjacency_params.shape[0], ) + data.shape
             adjparams = collapsed_out.reshape(final_shape)
+
+    print(corrparams)
 
     # apply 6s correction parameters
     data = wrap_6S.perform_correction(data, corrparams)

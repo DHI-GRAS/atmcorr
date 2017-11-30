@@ -6,7 +6,7 @@ import yamlconfig.click_option
 @yamlconfig.click_option.yaml_config_option(
         keys=[
             'sensor', 'dnFile', 'mtdFile', 'band_ids',
-            'method', 'atm', 'aeroProfile', 'tileSize',
+            'atm', 'aeroProfile', 'tileSize',
             'outfile',
             ('adjCorr', False),
             ('mtdFile_tile', None),
@@ -22,9 +22,13 @@ def cli(dnFile, outfile, **config):
     set_cli_logger(level='INFO')
     from atmcorr.processing import main
     import rasterio
+    click.echo('Reading input data ...')
     with rasterio.open(dnFile) as src:
         data = src.read()
         profile = src.profile
+    click.echo('Correcting ...')
     outdata, outprofile = main(data=data, profile=profile, **config)
+    click.echo('Writing output data ...')
     with rasterio.open(outfile, 'w', **outprofile) as dst:
         dst.write(outdata)
+    click.echo('All done.')
