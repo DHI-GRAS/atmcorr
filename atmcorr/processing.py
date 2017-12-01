@@ -49,11 +49,11 @@ def main_optdict(options):
 def main(
         data, profile,
         sensor, mtdFile,
-        aeroProfile, atm={},
-        tileSize=0,
+        aeroProfile, band_ids,
+        atm={}, tileSize=0,
         adjCorr=True,
         aotMultiplier=1.0,
-        mtdFile_tile=None, band_ids=None, date=None,
+        mtdFile_tile=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
         earthdata_credentials=None):
     """Main workflow function for atmospheric correction
@@ -85,7 +85,6 @@ def main(
     band_ids : list of int or str
         band IDs (0-based) from complete
         sensor band set
-        required if not full se is used
     date : datetime.datetime, optional
         image date
         will be retrieved from metadata
@@ -132,13 +131,10 @@ def main(
         date = dateutil.parser.parse(date)
 
     nbands = data.shape[0]
-    if band_ids is not None and len(band_ids) != nbands:
+    if len(band_ids) != nbands:
         raise ValueError(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
             .format(len(band_ids), nbands))
-
-    if band_ids is None:
-        band_ids = np.arange(nbands)
 
     if atm is None:
         atm = {'AOT': None, 'PWV': None, 'ozone': None}
@@ -150,22 +146,30 @@ def main(
 
     nodata = profile['nodata']
     if nodata is not None:
-        if nodata not in [0, 65536]:
-            data[data == nodata] = 0
-            profile['nodata'] = 0
+        data = data.astype('float32')
+        data[data == nodata] = np.nan
 
     # DN -> Radiance
-    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
-    if not np.any(data):
-        raise RuntimeError('Data is all zeros.')
+    data = radiance.dn_to_radiance(data, sensor, **kwargs_toa_radiance)
 
     # Radiance -> Reflectance
     corrparams, adjparams = _get_corrparams(
-            data, profile, band_ids, sensor, date,
-            mtdFile, mtdFile_tile,
-            atm, kwargs_toa_radiance, tileSize,
-            adjCorr, aotMultiplier, aeroProfile,
-            use_modis, modis_atm_dir, earthdata_credentials)
+        datashape=data.shape,
+        profile=profile,
+        band_ids=band_ids,
+        sensor=sensor,
+        date=date,
+        mtdFile=mtdFile,
+        mtdFile_tile=mtdFile_tile,
+        atm=atm,
+        kwargs_toa_radiance=kwargs_toa_radiance,
+        tileSize=tileSize,
+        adjCorr=adjCorr,
+        aotMultiplier=aotMultiplier,
+        aeroProfile=aeroProfile,
+        use_modis=use_modis,
+        modis_atm_dir=modis_atm_dir,
+        earthdata_credentials=earthdata_credentials)
 
     # apply 6s correction parameters
     data = wrap_6S.perform_correction(data, corrparams)
@@ -334,6 +338,9 @@ def _get_corrparams(
             # unpack dimensions again
             final_shape = (adjacency_params.shape[0], ) + datashape
             adjparams = collapsed_out.reshape(final_shape)
+
+    if not adjCorr:
+        adjparams = None
 
     return corrparams, adjparams
 
