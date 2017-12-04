@@ -15,10 +15,8 @@ from atmcorr import wrap_6S
 from atmcorr import metadata
 from atmcorr import radiance
 from atmcorr import resampling
-from atmcorr import reflectance
 from atmcorr import response_curves
 from atmcorr import viewing_geometry
-from atmcorr.sensors import sensor_is
 from atmcorr.sensors import check_sensor_supported
 from atmcorr.adjacency_correction import adjacency_correction
 
@@ -38,7 +36,7 @@ def _earthdata_credentials_from_env():
     auth = dict(
         username=os.environ.get('EARTHDATA_USERNAME'),
         password=os.environ.get('EARTHDATA_PASSWORD'))
-    if None in list(auth.values):
+    if None in list(auth.values()):
         raise ValueError(
             'Environment variables ERTHDATA_USERNAME and EARTHDATA_PASSWORD not set.')
     return auth
@@ -50,12 +48,12 @@ def main_optdict(options):
 
 def main(
         data, profile,
-        sensor, mtdFile, method,
-        aeroProfile, atm={},
-        tileSize=0,
+        sensor, mtdFile,
+        aeroProfile, band_ids,
+        atm={}, tileSize=0,
         adjCorr=True,
         aotMultiplier=1.0,
-        mtdFile_tile=None, band_ids=None, date=None,
+        mtdFile_tile=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
         earthdata_credentials=None):
     """Main workflow function for atmospheric correction
@@ -70,8 +68,6 @@ def main(
         see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
         path to mtdFile file
-    method : str
-        6S, RAD, DOS, TOA (same as DOS)
     atm : dict, optional
         atmospheric parameters
     aeroProfile : str
@@ -89,7 +85,6 @@ def main(
     band_ids : list of int or str
         band IDs (0-based) from complete
         sensor band set
-        required if not full se is used
     date : datetime.datetime, optional
         image date
         will be retrieved from metadata
@@ -141,9 +136,6 @@ def main(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
             .format(len(band_ids), nbands))
 
-    if band_ids is None:
-        band_ids = np.arange(nbands)
-
     if atm is None:
         atm = {'AOT': None, 'PWV': None, 'ozone': None}
 
@@ -154,53 +146,53 @@ def main(
 
     nodata = profile['nodata']
     if nodata is not None:
-        if nodata not in [0, 65536]:
-            data[data == nodata] = 0
-            profile['nodata'] = 0
+        data = data.astype('float32')
+        data[data == nodata] = np.nan
 
-    # DN -> Radiance -> Reflectance
-    if method == '6S':
-        data = _main_6S(
-                data, profile, band_ids, sensor, date,
-                mtdFile, mtdFile_tile,
-                atm, kwargs_toa_radiance, tileSize,
-                adjCorr, aotMultiplier, aeroProfile,
-                use_modis, modis_atm_dir, earthdata_credentials)
-    elif method in ['DOS', 'TOA']:
-        doDOS = (method == 'DOS')
-        if sensor_is(sensor, 'S2'):
-            # S2 data is provided in L1C meaning in TOA reflectance
-            data = reflectance.radiance_to_reflectance(
-                data, mtdFile, sensor, band_ids=band_ids)
-        else:
-            data = radiance.dn_to_radiance(
-                data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-            data = reflectance.radiance_to_reflectance(
-                data, mtdFile, sensor, band_ids=band_ids)
-    elif method == 'RAD':
-        doDOS = False
-        data = radiance.dn_to_radiance(data, sensor, doDOS=doDOS, **kwargs_toa_radiance)
-    else:
-        raise ValueError('Unknown method \'{}\'.'.format(method))
+    # DN -> Radiance
+    data = radiance.dn_to_radiance(data, sensor, **kwargs_toa_radiance)
+
+    # Radiance -> Reflectance
+    corrparams, adjparams = _get_corrparams(
+        datashape=data.shape,
+        profile=profile,
+        band_ids=band_ids,
+        sensor=sensor,
+        date=date,
+        mtdFile=mtdFile,
+        mtdFile_tile=mtdFile_tile,
+        atm=atm,
+        kwargs_toa_radiance=kwargs_toa_radiance,
+        tileSize=tileSize,
+        adjCorr=adjCorr,
+        aotMultiplier=aotMultiplier,
+        aeroProfile=aeroProfile,
+        use_modis=use_modis,
+        modis_atm_dir=modis_atm_dir,
+        earthdata_credentials=earthdata_credentials)
+
+    # apply 6s correction parameters
+    data = wrap_6S.perform_correction(data, corrparams)
+
+    if adjCorr:
+        # perform adjecency correction
+            data = adjacency_correction(
+                data, *adjparams,
+                pixel_size=profile['transform'].a)
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
     return data, profile
 
 
-def _main_6S(
-        data, profile, band_ids, sensor, date,
+def _get_corrparams(
+        datashape, profile, band_ids, sensor, date,
         mtdFile, mtdFile_tile,
         atm, kwargs_toa_radiance, tileSize,
         adjCorr, aotMultiplier, aeroProfile,
         use_modis, modis_atm_dir, earthdata_credentials):
 
-    # convert to radiance
-    data = radiance.dn_to_radiance(data, sensor, doDOS=False, **kwargs_toa_radiance)
-    if not np.any(data):
-        raise RuntimeError('Data is all zeros.')
-
-    nbands, height, width = data.shape
+    nbands, height, width = datashape
 
     if tileSize:
         tiling_transform, tiling_shape = tiling.get_tiled_transform_shape(
@@ -324,19 +316,19 @@ def _main_6S(
     else:
         logger.debug('resampling correction parameters')
         # resample 6S correction parameters to image
-        corrparams = np.empty(data.shape, dtype=correction_params.dtype)
+        corrparams = np.empty(datashape, dtype=correction_params.dtype)
         for field in corrparams.dtype.names:
             corrparams[field] = resampling.resample(
                 source=correction_params[field],
                 src_transform=tiling_transform,
                 src_crs=profile['crs'],
                 dst_transform=profile['transform'],
-                dst_shape=data.shape)
+                dst_shape=datashape)
         if adjCorr:
             # resample adjacency correction parameters to image
             # collapse first two dimensions
             collapsed_in = adjacency_params.reshape((-1, ) + adjacency_params.shape[2:])
-            dst_shape = (collapsed_in.shape[0], ) + data.shape[1:]
+            dst_shape = (collapsed_in.shape[0], ) + datashape[1:]
             collapsed_out = resampling.resample(
                 source=collapsed_in,
                 src_transform=tiling_transform,
@@ -344,20 +336,13 @@ def _main_6S(
                 dst_transform=profile['transform'],
                 dst_shape=dst_shape)
             # unpack dimensions again
-            final_shape = (adjacency_params.shape[0], ) + data.shape
+            final_shape = (adjacency_params.shape[0], ) + datashape
             adjparams = collapsed_out.reshape(final_shape)
 
-    # apply 6s correction parameters
-    data = wrap_6S.perform_correction(data, corrparams)
+    if not adjCorr:
+        adjparams = None
 
-    if adjCorr:
-        # perform adjecency correction
-            data = adjacency_correction(
-                data,
-                *adjparams,
-                pixel_size=profile['transform'].a)
-
-    return data
+    return corrparams, adjparams
 
 
 def _copy_check_profile(profile):
