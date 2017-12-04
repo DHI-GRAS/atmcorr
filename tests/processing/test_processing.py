@@ -30,7 +30,6 @@ def _get_inputs():
         profile=profile,
         sensor='WV2',
         mtdFile=mtdFile,
-        method='6S',
         atm={
             'AOT': 0.35,
             'PWV': 1.0,
