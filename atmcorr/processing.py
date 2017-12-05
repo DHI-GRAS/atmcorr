@@ -146,8 +146,9 @@ def main(
 
     nodata = profile['nodata']
     if nodata is not None:
-        data = data.astype('float32')
-        data[data == nodata] = np.nan
+        data_float = data.astype('float32')
+        data_float[data == nodata] = np.nan
+        data = data_float
 
     # DN -> Radiance
     data = radiance.dn_to_radiance(data, sensor, **kwargs_toa_radiance)
@@ -308,14 +309,15 @@ def _get_corrparams(
 
     # reproject parameters
     if tiling_shape == (1, 1):
+        # extract params from recarray
         corrparams = {
             field: correction_params[field][:, 0, 0]
             for field in correction_params.dtype.names}
         if adjCorr:
             adjparams = adjacency_params[:, :, 0, 0]
     else:
-        logger.debug('resampling correction parameters')
         # resample 6S correction parameters to image
+        logger.info('Resampling correction parameters')
         corrparams = np.empty(datashape, dtype=correction_params.dtype)
         for field in corrparams.dtype.names:
             corrparams[field] = resampling.resample(
@@ -326,6 +328,7 @@ def _get_corrparams(
                 dst_shape=datashape)
         if adjCorr:
             # resample adjacency correction parameters to image
+            logger.info('Resampling adjacency correction parameters')
             # collapse first two dimensions
             collapsed_in = adjacency_params.reshape((-1, ) + adjacency_params.shape[2:])
             dst_shape = (collapsed_in.shape[0], ) + datashape[1:]

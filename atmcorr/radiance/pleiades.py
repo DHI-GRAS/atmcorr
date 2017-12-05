@@ -1,17 +1,16 @@
 import numpy as np
 
-from atmcorr.metadata import pleiades as metadata
+import satmeta.pleiades.parser as plparser
 
 
 def dn_to_radiance(dndata, mtdFile, band_ids):
     """Apply radiometric correction to Pleadis image"""
-    gain, bias = metadata.get_gain_bias_PHR1(mtdFile)
-    gain = [gain[i] for i in band_ids]
-    bias = [bias[i] for i in band_ids]
+    metadata = plparser.parse_metadata(mtdFile)
+    gain_bias = metadata['calibration_values']
+    gain, bias = (np.array(gain_bias[key])[band_ids] for key in ['gain', 'bias'])
     radata = np.zeros(dndata.shape, dtype='float32')
-    radata[dndata == 65536] = np.nan
-    for i in range(radata.shape[0]):
-        radata[i, ...] = dndata[i] / gain[i] + bias[i]
     with np.errstate(invalid='ignore'):
+        for i in range(radata.shape[0]):
+            radata[i, ...] = dndata[i] / gain[i] + bias[i]
         radata[radata < 0] = 0
     return radata

@@ -1,6 +1,6 @@
 SUPPORTED_SENSORS = [
     'WV2', 'WV3', 'WV4', 'GE1',
-    'PHRA1A', 'PHRA1B', 'SPOT6',
+    'PHR1A', 'PHR1B', 'SPOT6',
     'L7', 'L8', 'S2A', 'S2B']
 
 
