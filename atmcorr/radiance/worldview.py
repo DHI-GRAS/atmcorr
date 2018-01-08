@@ -16,7 +16,6 @@ def dn_to_radiance(dndata, mtdFile, band_ids):
         band IDs
     """
     radata = radiance.dn_to_radiance(dndata, mtdFile, band_ids=band_ids)
-    radata[dndata == 65536] = np.nan
     with np.errstate(invalid='ignore'):
         radata[radata < 0] = 0
     return radata
