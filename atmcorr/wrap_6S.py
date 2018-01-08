@@ -172,11 +172,7 @@ def perform_correction(radiance, corrparams):
 
     for i in range(nbands):
         # Perform the atmospheric correction
-        with np.errstate(invalid='ignore'):
-            # safe to ignore: failing elements already NaN
-            mask_nan = radiance[i] == 0
         y = xa[i] * radiance[i] - xb[i]
-        y[mask_nan] = np.nan
         refl_band = y / (xc[i] * y + 1.0)
         with np.errstate(invalid='ignore'):
             # safe to ignore: NaN elements remain NaN
