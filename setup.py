@@ -1,11 +1,13 @@
 from setuptools import setup, find_packages
+import versioneer
 
 setup(
     name='atmcorr',
-    version='0.16',
+    version=versioneer.get_version(),
+    cmdclass=versioneer.get_cmdclass(),
     description='Atmospheric Correction using 6S',
     author='Jonas Solvsteen',
-    author_email='josl@dhi-gras.com',
+    author_email='josl@dhigroup.com',
     packages=find_packages(),
     entry_points="""
     [console_scripts]
