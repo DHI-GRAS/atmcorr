@@ -91,7 +91,6 @@ def setup_sixs(
         if value is not None:
             setattr(mysixs.geometry, attrname, value)
 
-    mysixs.produce_debug_report()
     return mysixs
 
 
@@ -113,7 +112,6 @@ def generate_jobs(rcurves_dict, sixs_params):
         sensor response curve
     """
     # set up SixS instance once
-    print(sixs_params)
     mysixs = setup_sixs(**sixs_params)
 
     # Run 6S for each spectral band
