@@ -31,7 +31,7 @@ def test_bounds_to_projected_extents():
     extent_rec = tiling.bounds_to_projected_extents(*bounds, src_crs=src_crs)
     assert extent_rec.shape == (1, 1)
     assert 'xmin' in extent_rec.dtype.names
-    assert np.issubdtype(extent_rec['xmin'][0, 0], np.float)
+    assert np.issubdtype(extent_rec['xmin'][0, 0], np.floating)
 
 
 def test_recarr_take_dict():
@@ -42,4 +42,4 @@ def test_recarr_take_dict():
         src_crs={'init': 'epsg:4032'})
     d = tiling.recarr_take_dict(a, 0, 0)
     assert type(d) == dict
-    assert np.issubdtype(d['xmin'], np.float)
+    assert np.issubdtype(d['xmin'], np.floating)
