@@ -3,6 +3,7 @@ import logging
 
 import numpy as np
 from Py6S import SixS
+from Py6S import GroundReflectance
 from Py6S import AtmosProfile
 from Py6S import AeroProfile
 from Py6S import AtmosCorr
@@ -31,85 +32,94 @@ AERO_PROFILES = [
 
 
 def setup_sixs(
-        AOT, PWV, ozone,
-        aeroProfile, geometry_dict):
+        atm, geometry, aeroProfile='Continental',
+        reflectance_constant=10, is_ocean=False):
     """Set up 6S instance
 
     Parameters
     ----------
-    AOT, PWV, ozone : float
-        atmospheric constituents
+    atm : dict
+        AOT, PWV, ozone : float
+            atmospheric constituents
     aeroProfile : str
         name of profile
         must be attribute of Py6S.AeroProfile
-    geometry_dict : dict
+    geometry : dict
         from viewing_geometry
+    reflectance_constant : float
+        magic number for AtmosCorr<name>FromReflectance
+    is_ocean : bool
+        use ocean-optimized settings
+
+    Returns
+    -------
+    initialized SixS instance
     """
     mysixs = SixS()
 
-    # Set 6S BRDF model to 1 m/mysixs wind ocean with typical salinity and pigment concentration
-    # mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
-    mysixs.atmos_profile = AtmosProfile.UserWaterAndOzone(PWV, ozone)
+    # set ground reflectance
+    if is_ocean:
+        mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
 
+    # set atmospheric profile
+    mysixs.atmos_profile = AtmosProfile.UserWaterAndOzone(atm['PWV'], atm['ozone'])
+    mysixs.aot550 = atm['AOT']
+
+    # set aero profile
     try:
         aeroProfile_attr = getattr(AeroProfile, aeroProfile)
     except (TypeError, AttributeError):
         raise ValueError(
-                'aeroProfile \'{}\' not recognized. Try one of {}'
-                ''.format(aeroProfile, AERO_PROFILES))
-
-    mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfile_attr)
-    # get from MOD04 or MODATML2
-    mysixs.aot550 = AOT
+            'aeroProfile \'{}\' not recognized. Try one of {}'
+            .format(aeroProfile, AERO_PROFILES))
+    else:
+        mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfile_attr)
 
     # Set 6S altitude
     mysixs.altitudes.set_target_sea_level()
     mysixs.altitudes.set_sensor_satellite_level()
 
-    # Set 6S atmospheric correction
-    mysixs.atmos_corr = AtmosCorr.AtmosCorrLambertianFromReflectance(10)
+    # set 6S atmospheric correction method
+    mysixs.atmos_corr = (
+        AtmosCorr.AtmosCorrBRDFFromReflectance(reflectance_constant) if is_ocean else
+        AtmosCorr.AtmosCorrLambertianFromReflectance(reflectance_constant))
 
     # Set 6S geometry
     mysixs.geometry = Geometry.User()
-    for attrname in GEOMETRY_ATTRS:
-        key = GEOMETRY_ATTRS[attrname]
-        value = geometry_dict[key]
+    for attrname, key in GEOMETRY_ATTRS.items():
+        value = geometry[key]
         if value is not None:
             setattr(mysixs.geometry, attrname, value)
 
+    mysixs.produce_debug_report()
     return mysixs
 
 
-def generate_jobs(
-        atm,
-        rcurves_dict,
-        geometry_dict,
-        aeroProfile="Continental"):
+def generate_jobs(rcurves_dict, sixs_params):
     """Sets up Py6S instance and returns job for run_sixs_for_wavelength
 
     Parameters
     ----------
-    atm : dict
-        atmospheric parameters
     rcurves_dict : dict
         sensor response curve parameters
-    geometry_dict : dict
-        viewing / Sun angles parameters
-    aeroProfile : str
-        aero profile for 6S
+    sixs_params : dict
+        keyword arguments for setup_sixs
+
+    Returns
+    -------
+    list of tuples (SixS, float, float, ndarray)
+        SixS instance
+        start and env wavelengths
+        sensor response curve
     """
     # set up SixS instance once
-    mysixs = setup_sixs(
-            atm['AOT'],
-            atm['PWV'],
-            atm['ozone'],
-            aeroProfile,
-            geometry_dict)
+    print(sixs_params)
+    mysixs = setup_sixs(**sixs_params)
 
     # Run 6S for each spectral band
     jobs = [
-            (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
-            for rcurve in rcurves_dict['rcurves']]
+        (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
+        for rcurve in rcurves_dict['rcurves']]
     return jobs
 
 
@@ -144,14 +154,14 @@ def run_sixs_job(args):
     mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
     mysixs.run()
     xdict = {
-            'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
-            'xb': mysixs.outputs.coef_xb,  # scattering term of the atmosphere
-            'xc': mysixs.outputs.coef_xc}  # reflectance of atmosphere for isotropic light (albedo)
+        'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
+        'xb': mysixs.outputs.coef_xb,  # scattering term of the atmosphere
+        'xc': mysixs.outputs.coef_xc}  # reflectance of atmosphere for isotropic light (albedo)
     adjcorr_params = [
-            mysixs.geometry.view_z,
-            mysixs.outputs.optical_depth_total.total,
-            mysixs.outputs.transmittance_global_gas.upward,
-            mysixs.outputs.transmittance_total_scattering.upward]
+        mysixs.geometry.view_z,
+        mysixs.outputs.optical_depth_total.total,
+        mysixs.outputs.transmittance_global_gas.upward,
+        mysixs.outputs.transmittance_total_scattering.upward]
     return (xdict, adjcorr_params, moreargs)
 
 

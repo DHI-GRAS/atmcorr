@@ -3,6 +3,7 @@ import copy
 import logging
 import datetime
 import itertools
+import functools
 import concurrent.futures
 import multiprocessing
 
@@ -49,8 +50,9 @@ def main_optdict(options):
 def main(
         data, profile,
         sensor, mtdFile,
-        aeroProfile, band_ids,
-        atm={}, tileSize=0,
+        band_ids,
+        sixs_params,
+        tileSize=0,
         adjCorr=True,
         aotMultiplier=1.0,
         mtdFile_tile=None, date=None,
@@ -68,10 +70,12 @@ def main(
         see atmcorr.sensors.SUPPORTED_SENSORS
     mtdFile : str
         path to mtdFile file
-    atm : dict, optional
-        atmospheric parameters
-    aeroProfile : str
-        aero profile name
+    band_ids : list of int
+        bands of data
+        0-based indices of full band stack
+    sixs_params : dict
+        6S parameters passed to setup_sixs
+        keys: aeroProfile, atm, is_ocean
     tileSize : int
         tile size in pixels
     adjCorr : bool
@@ -82,9 +86,6 @@ def main(
     mtdFile_tile : str
         path to tile mtdFile
         required for S2
-    band_ids : list of int or str
-        band IDs (0-based) from complete
-        sensor band set
     date : datetime.datetime, optional
         image date
         will be retrieved from metadata
@@ -122,6 +123,11 @@ def main(
                     'provide your earthdata_credentials (https://earthdata.nasa.gov/).')
         if not os.path.isdir(modis_atm_dir):
             os.makedirs(modis_atm_dir)
+    else:
+        if not sixs_params.get('atm', None):
+            raise ValueError(
+                'If not using MODIS, you must provide atmospheric '
+                'composition in sixs_params[\'atm\'].')
 
     if date is None:
         date = metadata.get_date(sensor, mtdFile)
@@ -136,14 +142,6 @@ def main(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
             .format(len(band_ids), nbands))
 
-    if atm is None:
-        atm = {'AOT': None, 'PWV': None, 'ozone': None}
-
-    kwargs_toa_radiance = dict(
-            mtdFile=mtdFile,
-            mtdFile_tile=mtdFile_tile,
-            band_ids=band_ids)
-
     nodata = profile['nodata']
     if nodata is not None:
         data_float = data.astype('float32')
@@ -151,7 +149,11 @@ def main(
         data = data_float
 
     # DN -> Radiance
-    data = radiance.dn_to_radiance(data, sensor, **kwargs_toa_radiance)
+    data = radiance.dn_to_radiance(
+        data, sensor,
+        mtdFile=mtdFile,
+        mtdFile_tile=mtdFile_tile,
+        band_ids=band_ids)
 
     # Radiance -> Reflectance
     corrparams, adjparams = _get_corrparams(
@@ -162,12 +164,10 @@ def main(
         date=date,
         mtdFile=mtdFile,
         mtdFile_tile=mtdFile_tile,
-        atm=atm,
-        kwargs_toa_radiance=kwargs_toa_radiance,
+        sixs_params=sixs_params,
         tileSize=tileSize,
         adjCorr=adjCorr,
         aotMultiplier=aotMultiplier,
-        aeroProfile=aeroProfile,
         use_modis=use_modis,
         modis_atm_dir=modis_atm_dir,
         earthdata_credentials=earthdata_credentials)
@@ -188,9 +188,8 @@ def main(
 
 def _get_corrparams(
         datashape, profile, band_ids, sensor, date,
-        mtdFile, mtdFile_tile,
-        atm, kwargs_toa_radiance, tileSize,
-        adjCorr, aotMultiplier, aeroProfile,
+        mtdFile, mtdFile_tile, sixs_params, tileSize,
+        adjCorr, aotMultiplier,
         use_modis, modis_atm_dir, earthdata_credentials):
 
     nbands, height, width = datashape
@@ -233,7 +232,7 @@ def _get_corrparams(
     # retrieve MODIS parameters for all tiles
     all_atm = []
     if not use_modis:
-        all_atm.append(atm)
+        all_atm.append(sixs_params['atm'])
     else:
         for j, i in _get_tile_index_iter():
             extent = tiling.recarr_take_dict(tile_extents_wgs, j, i)
@@ -279,18 +278,20 @@ def _get_corrparams(
     # Get 6S correction parameters for each tile
     def _job_generator():
         for ktile, (j, i) in enumerate(_get_tile_index_iter()):
-            atm_tile = all_atm[min(ktile, len(all_atm)-1)]
-            geom_tile = all_geom[ktile]
+            _sixs_params = sixs_params.copy()
+            _sixs_params['atm'] = all_atm[min(ktile, len(all_atm)-1)]
+            _sixs_params['geometry'] = all_geom[ktile]
             jobs = wrap_6S.generate_jobs(
-                atm=atm_tile,
-                geometry_dict=geom_tile,
                 rcurves_dict=rcurves_dict,
-                aeroProfile=aeroProfile)
+                sixs_params=_sixs_params)
             for b, job in enumerate(jobs):
                 yield tuple(job) + (b, j, i)
 
+    # prepare parallel execution
+    jobgen = _job_generator()
     njobs = tiling_shape[0] * tiling_shape[1] * nbands
-    pbarkw = dict(total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
+    pbar = functools.partial(
+        tqdm.tqdm, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
     nprocs = NUM_PROCESSES
@@ -298,9 +299,7 @@ def _get_corrparams(
         nprocs = multiprocessing.cpu_count()
     # execute 6S jobs
     with concurrent.futures.ProcessPoolExecutor(nprocs) as executor:
-        for tilecp, adjcoef, idx in tqdm.tqdm(
-                executor.map(wrap_6S.run_sixs_job, _job_generator()),
-                **pbarkw):
+        for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
             b, j, i = idx
             for field in correction_params.dtype.names:
                 correction_params[field][b, j, i] = tilecp[field]
