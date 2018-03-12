@@ -2,8 +2,8 @@ FROM dhigras/atmcorr-env:latest
 
 MAINTAINER Jonas Sølvsteen <josl@dhigroup.com>
 
-# resolve mpl QT backend issue
-ENV MPLBACKEND=Agg
+RUN conda config --add channels conda-forge && \
+    conda install pytest codecov
 
 WORKDIR /work
 
