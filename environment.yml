@@ -1,10 +1,12 @@
 name: atmcorr
 channels:
     - conda-forge
+    - default
+    - conda-forge/label/dev
 dependencies:
     - python=3
+    - rasterio>=1.0a12
     - gdal
-    - rasterio
     - numpy
     - scipy
     - click
