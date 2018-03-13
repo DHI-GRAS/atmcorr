@@ -5,6 +5,9 @@ MAINTAINER Jonas Sølvsteen <josl@dhigroup.com>
 RUN conda config --add channels conda-forge && \
     conda install pytest codecov
 
+# resolve mpl QT backend issue 
+ENV MPLBACKEND=Agg
+
 WORKDIR /work
 
 COPY . atmcorr
