@@ -1,14 +1,9 @@
 from __future__ import division
+import copy
 import logging
 
 import numpy as np
-from Py6S import SixS
-from Py6S import GroundReflectance
-from Py6S import AtmosProfile
-from Py6S import AeroProfile
-from Py6S import AtmosCorr
-from Py6S import Wavelength
-from Py6S import Geometry
+import Py6S
 
 logger = logging.getLogger(__name__)
 
@@ -55,25 +50,25 @@ def setup_sixs(
     -------
     initialized SixS instance
     """
-    mysixs = SixS()
+    mysixs = Py6S.SixS()
 
     # set ground reflectance
     if is_ocean:
-        mysixs.ground_reflectance = GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
+        mysixs.ground_reflectance = Py6S.GroundReflectance.HomogeneousOcean(1.0, 0, -1, 0.5)
 
     # set atmospheric profile
-    mysixs.atmos_profile = AtmosProfile.UserWaterAndOzone(atm['PWV'], atm['ozone'])
+    mysixs.atmos_profile = Py6S.AtmosProfile.UserWaterAndOzone(atm['PWV'], atm['ozone'])
     mysixs.aot550 = atm['AOT']
 
     # set aero profile
     try:
-        aeroProfile_attr = getattr(AeroProfile, aeroProfile)
+        aeroProfile_attr = getattr(Py6S.AeroProfile, aeroProfile)
     except (TypeError, AttributeError):
         raise ValueError(
             'aeroProfile \'{}\' not recognized. Try one of {}'
             .format(aeroProfile, AERO_PROFILES))
     else:
-        mysixs.aero_profile = AeroProfile.PredefinedType(aeroProfile_attr)
+        mysixs.aero_profile = Py6S.AeroProfile.PredefinedType(aeroProfile_attr)
 
     # Set 6S altitude
     mysixs.altitudes.set_target_sea_level()
@@ -81,11 +76,11 @@ def setup_sixs(
 
     # set 6S atmospheric correction method
     mysixs.atmos_corr = (
-        AtmosCorr.AtmosCorrBRDFFromReflectance(reflectance_constant) if is_ocean else
-        AtmosCorr.AtmosCorrLambertianFromReflectance(reflectance_constant))
+        Py6S.AtmosCorr.AtmosCorrBRDFFromReflectance(reflectance_constant) if is_ocean else
+        Py6S.AtmosCorr.AtmosCorrLambertianFromReflectance(reflectance_constant))
 
     # Set 6S geometry
-    mysixs.geometry = Geometry.User()
+    mysixs.geometry = Py6S.Geometry.User()
     for attrname, key in GEOMETRY_ATTRS.items():
         value = geometry[key]
         if value is not None:
@@ -116,7 +111,7 @@ def generate_jobs(rcurves_dict, sixs_params):
 
     # Run 6S for each spectral band
     jobs = [
-        (mysixs, rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
+        (copy.deepcopy(mysixs), rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
         for rcurve in rcurves_dict['rcurves']]
     return jobs
 
@@ -149,7 +144,7 @@ def run_sixs_job(args):
     """
     mysixs, start_wv, end_wv, rcurve = args[:4]
     moreargs = args[4:]
-    mysixs.wavelength = Wavelength(start_wv, end_wv, rcurve)
+    mysixs.wavelength = Py6S.Wavelength(start_wv, end_wv, rcurve)
     mysixs.run()
     xdict = {
         'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
