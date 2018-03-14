@@ -15,7 +15,6 @@ GEOMETRY_ATTRS = {
         'day': 'day',
         'month': 'month'}
 
-
 AERO_PROFILES = [
         'NoAerosols',
         'Continental',
@@ -110,9 +109,12 @@ def generate_jobs(rcurves_dict, sixs_params):
     mysixs = setup_sixs(**sixs_params)
 
     # Run 6S for each spectral band
-    jobs = [
-        (copy.deepcopy(mysixs), rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
-        for rcurve in rcurves_dict['rcurves']]
+    jobs = []
+    for rcurve in rcurves_dict['rcurves']:
+        s = copy.deepcopy(mysixs)
+        s.wavelength = Py6S.Wavelength(rcurves_dict['start_wv'], rcurves_dict['end_wv'], rcurve)
+        jobs.append((s, ))
+
     return jobs
 
 
@@ -121,17 +123,9 @@ def run_sixs_job(args):
 
     Parameters
     ----------
-    args : sequence
-        mysixs, start_wv, end_wv, rcurve
-
-    Elements
-    --------
-    mysixs : SixS instance
-        initialized 6S instance
-    start_wv, end_wv : float
-        wave length range
-    rcurve : ndarray
-        sensor response curve
+    args : tuple
+        initialized SixS instance
+        [additional args passed through]
 
     Returns
     -------
@@ -142,9 +136,8 @@ def run_sixs_job(args):
     list
         arguments passed through
     """
-    mysixs, start_wv, end_wv, rcurve = args[:4]
-    moreargs = args[4:]
-    mysixs.wavelength = Py6S.Wavelength(start_wv, end_wv, rcurve)
+    mysixs = args[0]
+    moreargs = args[1:]
     mysixs.run()
     xdict = {
         'xa': mysixs.outputs.coef_xa,  # inverse of transmitance
