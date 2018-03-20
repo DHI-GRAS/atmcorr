@@ -30,11 +30,12 @@ def _get_inputs():
         profile=profile,
         sensor='WV2',
         mtdFile=mtdFile,
-        atm={
-            'AOT': 0.35,
-            'PWV': 1.0,
-            'ozone': 0.15},
-        aeroProfile='Maritime',
+        sixs_params=dict(
+            aeroProfile='Maritime',
+            atm={
+                'AOT': 0.35,
+                'PWV': 1.0,
+                'ozone': 0.15}),
         band_ids=band_ids,
         adjCorr=True,
         aotMultiplier=1.0,
