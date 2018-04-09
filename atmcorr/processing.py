@@ -56,7 +56,7 @@ def main(
         aotMultiplier=1.0,
         mtdFile_tile=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
-        earthdata_credentials=None, nprocs=None):
+        earthdata_credentials=None, nthreads=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -97,9 +97,9 @@ def main(
     earthdata_credentials : dict
         username, password
         required for use_modis
-    nprocs : int, optional
-        number of processes to use
-        default: same as cpu cores
+    nthreads : int, optional
+        number of threads to use
+        default: cpu count * 2
 
     Returns
     -------
@@ -258,11 +258,11 @@ def main(
         tqdm.tqdm, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
-    if nprocs is None:
-        nprocs = multiprocessing.cpu_count() * 2
-    nprocs = min((nprocs, njobs))
+    if nthreads is None:
+        nthreads = multiprocessing.cpu_count() * 2
+    nthreads = min((nthreads, njobs))
     # execute 6S jobs
-    with concurrent.futures.ThreadPoolExecutor(nprocs) as executor:
+    with concurrent.futures.ThreadPoolExecutor(nthreads) as executor:
         for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
             b, j, i = idx
             for field in correction_params.dtype.names:
