@@ -30,7 +30,6 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 MODIS_ATM_DIR = os.path.expanduser(os.path.join('~', 'MODIS_ATM'))
-NUM_PROCESSES = None
 
 
 def _earthdata_credentials_from_env():
@@ -57,7 +56,7 @@ def main(
         aotMultiplier=1.0,
         mtdFile_tile=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
-        earthdata_credentials=None):
+        earthdata_credentials=None, nprocs=None):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -98,6 +97,9 @@ def main(
     earthdata_credentials : dict
         username, password
         required for use_modis
+    nprocs : int, optional
+        number of processes to use
+        default: same as cpu cores
 
     Returns
     -------
@@ -131,12 +133,11 @@ def main(
 
     if date is None:
         date = metadata.get_date(sensor, mtdFile)
-    elif isinstance(date, datetime.datetime):
-        pass
-    else:
+    elif not isinstance(date, datetime.datetime):
         date = dateutil.parser.parse(date)
 
-    nbands = data.shape[0]
+    nbands, height, width = datashape = data.shape
+
     if len(band_ids) != nbands:
         raise ValueError(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
@@ -156,43 +157,6 @@ def main(
         band_ids=band_ids)
 
     # Radiance -> Reflectance
-    corrparams, adjparams = _get_corrparams(
-        datashape=data.shape,
-        profile=profile,
-        band_ids=band_ids,
-        sensor=sensor,
-        date=date,
-        mtdFile=mtdFile,
-        mtdFile_tile=mtdFile_tile,
-        sixs_params=sixs_params,
-        tileSize=tileSize,
-        adjCorr=adjCorr,
-        aotMultiplier=aotMultiplier,
-        use_modis=use_modis,
-        modis_atm_dir=modis_atm_dir,
-        earthdata_credentials=earthdata_credentials)
-
-    # apply 6s correction parameters
-    data = wrap_6S.perform_correction(data, corrparams)
-
-    if adjCorr:
-        # perform adjecency correction
-            data = adjacency_correction(
-                data, *adjparams,
-                pixel_size=profile['transform'].a)
-
-    profile['dtype'] = 'float32'
-    profile['nodata'] = np.nan
-    return data, profile
-
-
-def _get_corrparams(
-        datashape, profile, band_ids, sensor, date,
-        mtdFile, mtdFile_tile, sixs_params, tileSize,
-        adjCorr, aotMultiplier,
-        use_modis, modis_atm_dir, earthdata_credentials):
-
-    nbands, height, width = datashape
 
     if tileSize:
         tiling_transform, tiling_shape = tiling.get_tiled_transform_shape(
@@ -294,11 +258,11 @@ def _get_corrparams(
         tqdm.tqdm, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
-    nprocs = NUM_PROCESSES
     if nprocs is None:
-        nprocs = multiprocessing.cpu_count()
+        nprocs = multiprocessing.cpu_count() * 2
+    nprocs = min((nprocs, njobs))
     # execute 6S jobs
-    with concurrent.futures.ProcessPoolExecutor(nprocs) as executor:
+    with concurrent.futures.ThreadPoolExecutor(nprocs) as executor:
         for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
             b, j, i = idx
             for field in correction_params.dtype.names:
@@ -344,7 +308,18 @@ def _get_corrparams(
     if not adjCorr:
         adjparams = None
 
-    return corrparams, adjparams
+    # apply 6s correction parameters
+    data = wrap_6S.perform_correction(data, corrparams)
+
+    if adjCorr:
+        # perform adjecency correction
+            data = adjacency_correction(
+                data, *adjparams,
+                pixel_size=profile['transform'].a)
+
+    profile['dtype'] = 'float32'
+    profile['nodata'] = np.nan
+    return data, profile
 
 
 def _copy_check_profile(profile):
