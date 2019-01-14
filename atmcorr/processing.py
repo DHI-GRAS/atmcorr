@@ -6,6 +6,7 @@ import itertools
 import functools
 import concurrent.futures
 import multiprocessing
+import platform
 
 import numpy as np
 import dateutil
@@ -261,6 +262,9 @@ def main(
     if nthreads is None:
         nthreads = multiprocessing.cpu_count() * 2
     nthreads = min((nthreads, njobs))
+    if platform.system() == 'Windows':
+        # Windows doesn't seem to like too many starting processes at a time
+        nthreads = min(nthreads, 64)
     # execute 6S jobs
     with concurrent.futures.ThreadPoolExecutor(nthreads) as executor:
         for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
