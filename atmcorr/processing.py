@@ -264,7 +264,7 @@ def main(
     nthreads = min((nthreads, njobs))
     if platform.system() == 'Windows':
         # Windows doesn't seem to like too many starting processes at a time
-        nthreads = min(nthreads, 64)
+        nthreads = min(nthreads, 36)
     # execute 6S jobs
     with concurrent.futures.ThreadPoolExecutor(nthreads) as executor:
         for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
