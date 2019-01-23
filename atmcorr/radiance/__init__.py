@@ -3,7 +3,7 @@ from atmcorr.sensors import sensor_is_any
 
 
 def dn_to_radiance(
-        dndata, sensor, mtdFile, band_ids, mtdFile_tile=None):
+        dndata, sensor, mtdFile, band_ids, mtdFile_tile=None, dst_transform=None):
     """Compute TOA radiance
 
     Parameters
@@ -21,6 +21,10 @@ def dn_to_radiance(
     mtdFile_tile : str
         tile metadata file
         required for Sentinel 2
+    dst_transform : affine.Affine, optional
+        image transform for dndata
+        used for Sentinel 2, if provided, to get interpolated
+        Sun zenith
     """
     commonkw = dict(
         dndata=dndata,
@@ -35,7 +39,10 @@ def dn_to_radiance(
     elif sensor_is(sensor, 'S2'):
         from . import sentinel2
         return sentinel2.toa_reflectance_to_radiance(
-            mtdFile_tile=mtdFile_tile, **commonkw)
+            mtdFile_tile=mtdFile_tile,
+            dst_transform=dst_transform,
+            **commonkw
+        )
     elif sensor_is(sensor, 'L8'):
         from . import landsat8
         return landsat8.dn_to_radiance(**commonkw)

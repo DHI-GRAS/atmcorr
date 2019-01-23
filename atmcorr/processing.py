@@ -144,20 +144,12 @@ def main(
             'Number of band IDs ({}) does not correspond to number of bands ({}).'
             .format(len(band_ids), nbands))
 
+    # convert input data to float
     nodata = profile['nodata']
     if nodata is not None:
         data_float = data.astype('float32')
         data_float[data == nodata] = np.nan
         data = data_float
-
-    # DN -> Radiance
-    data = radiance.dn_to_radiance(
-        data, sensor,
-        mtdFile=mtdFile,
-        mtdFile_tile=mtdFile_tile,
-        band_ids=band_ids)
-
-    # Radiance -> Reflectance
 
     if tileSize:
         tiling_transform, tiling_shape = tiling.get_tiled_transform_shape(
@@ -312,6 +304,16 @@ def main(
     if not adjCorr:
         adjparams = None
 
+    # DN -> Radiance
+    data = radiance.dn_to_radiance(
+        data, sensor,
+        mtdFile=mtdFile,
+        mtdFile_tile=mtdFile_tile,
+        band_ids=band_ids,
+        dst_transform=profile['transform']
+    )
+
+    # Radiance -> Reflectance
     # apply 6s correction parameters
     data = wrap_6S.perform_correction(data, corrparams)
 
