@@ -44,7 +44,7 @@ def toa_reflectance_to_radiance(dndata, mtdFile, mtdFile_tile, band_ids, dst_tra
             dst_transform=dst_transform,
             dst_shape=dst_shape,
             angles=['Sun'],
-            dirs=['Zenith'],
+            angle_dirs=['Zenith'],
             resample_method='rasterio'
         )
         sun_zenith = angles['Sun']['Zenith']
@@ -54,9 +54,11 @@ def toa_reflectance_to_radiance(dndata, mtdFile, mtdFile_tile, band_ids, dst_tra
         sun_zenith = gmeta['sun_zenith']
 
     # Convert to radiance
-    factor = irradiance * np.cos(np.radians(sun_zenith)) / (np.pi * qv)
+
     radiance = dndata.astype('f4')
-    for i in range(dndata.shape[0]):
-        radiance[i] /= rc
-        radiance[i] *= factor[i]
+    radiance /= rc
+    radiance *= irradiance[:, None, None]
+    radiance *= np.cos(np.radians(sun_zenith))
+    radiance /= (np.pi * qv)
+
     return radiance

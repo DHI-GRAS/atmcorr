@@ -319,9 +319,10 @@ def main(
 
     if adjCorr:
         # perform adjecency correction
-            data = adjacency_correction(
-                data, *adjparams,
-                pixel_size=profile['transform'].a)
+        data = adjacency_correction(
+            data, *adjparams,
+            pixel_size=profile['transform'].a
+        )
 
     profile['dtype'] = 'float32'
     profile['nodata'] = np.nan
