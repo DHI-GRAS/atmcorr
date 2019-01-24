@@ -1,6 +1,7 @@
 import numpy as np
+
 import satmeta.s2.meta as s2meta
-from satmeta.s2 import angles_2d as s2angles
+import satmeta.s2.angles_2d as s2angles
 
 
 def _get_angles_means(gmeta):
