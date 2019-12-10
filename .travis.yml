@@ -20,9 +20,3 @@ script:
 
 notifications:
   email: false
-  slack:
-    rooms:
-      - dhigras:TPwMxNqVS9FeaTUJNZlMmL6i
-    on_failure: change
-    on_success: change
-    on_pull_requests: false
