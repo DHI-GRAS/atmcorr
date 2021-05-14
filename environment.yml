@@ -13,7 +13,6 @@ dependencies:
     - ruamel.yaml
     - Py6S
     - lxml
-    - pyproj
     - shapely
     - tqdm
     - pandas  # sensor response curves

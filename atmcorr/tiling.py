@@ -1,7 +1,7 @@
 from __future__ import division
 
 import affine
-import pyproj
+import rasterio.warp
 import numpy as np
 
 
@@ -81,10 +81,8 @@ def _transform_corners(corners, src_crs, dst_crs):
     ndarray, ndarray
         projected coordinates
     """
-    src_proj = pyproj.Proj(src_crs)
-    dst_proj = pyproj.Proj(dst_crs)
     xs, ys = corners
-    xout, yout = pyproj.transform(src_proj, dst_proj, xs, ys)
+    xout, yout = rasterio.warp.transform(src_crs, dst_crs, xs, ys)
     return xout, yout
 
 
@@ -102,12 +100,18 @@ def _corners_to_extents(xs, ys):
         xmin, xmax, ymin, ymax
     """
     extent_rec = np.core.records.fromarrays(
-            [np.min(xs, axis=0), np.max(xs, axis=0), np.min(ys, axis=0), np.max(ys, axis=0)],
-            names=['xmin', 'xmax', 'ymin', 'ymax'])
+        [
+            np.min(xs, axis=0),
+            np.max(xs, axis=0),
+            np.min(ys, axis=0),
+            np.max(ys, axis=0)
+        ],
+        names=['xmin', 'xmax', 'ymin', 'ymax']
+    )
     return extent_rec
 
 
-def get_projected_extents(transform, height, width, src_crs, dst_crs={'init': 'epsg:4326'}):
+def get_projected_extents(transform, height, width, src_crs, dst_crs='epsg:4326'):
     """Get extents of pixels in WGS84 or other projection
 
     Parameters
@@ -132,7 +136,7 @@ def get_projected_extents(transform, height, width, src_crs, dst_crs={'init': 'e
     return _corners_to_extents(xproj, yproj)
 
 
-def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs={'init': 'epsg:4326'}):
+def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs='epsg:4326'):
     """Get extents record array from bounds
 
     Parameters
@@ -147,15 +151,13 @@ def bounds_to_projected_extents(left, bottom, right, top, src_crs, dst_crs={'ini
     np.recarray shape (1, 1)
         with names xmin, xmax, ymin, ymax
     """
-    src_proj = pyproj.Proj(src_crs)
-    dst_proj = pyproj.Proj(dst_crs)
     xs = np.array([left, left, right, right])
     ys = np.array([bottom, top, top, bottom])
-    xproj, yproj = pyproj.transform(src_proj, dst_proj, xs, ys)
+    xproj, yproj = rasterio.warp.transform(src_crs, dst_crs, xs, ys)
     return _corners_to_extents(xproj, yproj)[np.newaxis, np.newaxis]
 
 
-def get_projected_image_extent(transform, height, width, src_crs, dst_crs={'init': 'epsg:4326'}):
+def get_projected_image_extent(transform, height, width, src_crs, dst_crs='epsg:4326'):
     """Get extents of a whole image in WGS84 or other projection
 
     Parameters
