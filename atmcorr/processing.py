@@ -1,5 +1,4 @@
 import os
-import pickle
 import copy
 import logging
 import datetime
@@ -312,7 +311,7 @@ def main(
 
     # prepare parallel execution
     jobgen = _job_generator()
-    njobs = tiling_shape[0] * tiling_shape[1] * nbands
+    njobs = len(list(tile_index_iter(tiling_shape))) * nbands
     pbar = functools.partial(
         tqdm.tqdm, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
@@ -384,8 +383,6 @@ def main(
     # Radiance -> Reflectance
     # apply 6s correction parameters
     data = wrap_6S.perform_correction(data, corrparams)
-    with open('/mnt/exchange/panakouris/bathy/corr_params.pkl', 'wb') as dst:
-        pickle.dump(corrparams, dst)
 
     if adjCorr:
         # perform adjecency correction
