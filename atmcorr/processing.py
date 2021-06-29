@@ -67,7 +67,7 @@ def _interpolate_correction_params(correction_params, geometry_dict):
     # interpolate xa and xc
     for field in ['xa', 'xc']:
         for band in range(correction_params[field].shape[0]):
-            selected = correction_params[field][band, :, :].copy()
+            selected = correction_params[field][band, :, :]
             x_idx, y_idx = np.mgrid[:selected.shape[0], :selected.shape[1]]
             xyi = np.column_stack([x_idx.ravel(), y_idx.ravel()])
             subset_mask = np.where(~np.isnan(selected))
@@ -78,11 +78,12 @@ def _interpolate_correction_params(correction_params, geometry_dict):
                 known_data.append(selected[index])
             interpolated = scipy.interpolate.griddata(xy, known_data, xyi, method='nearest')
             interpolated = interpolated.reshape((selected.shape))
-            correction_params[field][band, :, :] = interpolated.copy()
+            correction_params[field][band, :, :] = interpolated
 
     # interploate xb correction params in the segments defined by the sensor azimuth
-    seg_a = geometry_dict['sensor_azimuth'] <= np.mean(geometry_dict['sensor_azimuth'])
-    seg_b = geometry_dict['sensor_azimuth'] > np.mean(geometry_dict['sensor_azimuth'])
+    mean_azimuth = np.mean(geometry_dict['sensor_azimuth'])
+    seg_a = geometry_dict['sensor_azimuth'] <= mean_azimuth
+    seg_b = geometry_dict['sensor_azimuth'] > mean_azimuth
     segments = [seg_a, seg_b]
     for segment in segments:
         for band in range(correction_params['xb'].shape[0]):
