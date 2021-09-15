@@ -5,6 +5,7 @@ channels:
     - conda-forge/label/dev
 dependencies:
     - python=3
+    - pyproj
     - rasterio>=1.0a12
     - gdal
     - numpy
