@@ -19,7 +19,7 @@ def _get_inputs():
     mtdFile = MTDFILES['WV02.imd']
     profile = dict(
             width=nx, height=ny,
-            crs=rasterio.crs.CRS({'init': 'epsg:32640'}),
+            crs=rasterio.crs.CRS('epsg:32640'),
             transform=affine.Affine(
                 2.0, 0.0, 364466.0808031342,
                 0.0, -2.0, 2836767.9090107735),
