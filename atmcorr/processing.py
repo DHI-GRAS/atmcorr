@@ -88,6 +88,8 @@ def _interpolate_correction_params(correction_params, geometry_dict):
     for segment in segments:
         for band in range(correction_params['xb'].shape[0]):
             selected = correction_params['xb'][band, :, :].copy()
+            if np.isnan(selected).all():
+                continue
             segment_mask = np.where(segment)
             xyi = np.asarray(list(map(list, zip(*segment_mask))))
             subset_mask = np.where(~np.isnan(selected) & segment)
