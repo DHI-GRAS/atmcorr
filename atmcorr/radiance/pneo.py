@@ -1,6 +1,6 @@
 import numpy as np
 
-import satmeta.pleiades.parser as plparser
+import satmeta.pneo.parser as plparser
 
 
 def dn_to_radiance(dndata, mtdFile, band_ids):
