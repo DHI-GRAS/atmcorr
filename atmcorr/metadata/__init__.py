@@ -15,5 +15,8 @@ def get_date(sensor, mtdFile):
     elif sensor_is(sensor, 'S2'):
         from . import sentinel2
         return sentinel2.get_date(mtdFile)
+    elif sensor_is(sensor, 'PNEO'):
+        from . import pneo
+        return pneo.get_date(mtdFile)
     else:
         raise ValueError('Unknown sensor.')
