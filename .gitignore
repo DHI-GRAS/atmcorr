@@ -103,3 +103,5 @@ $RECYCLE.BIN/
 
 # Editor files
 *.swp
+
+test_Atm_corr.py
