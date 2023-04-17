@@ -11,6 +11,6 @@ def dn_to_radiance(dndata, mtdFile, band_ids):
     radata = np.zeros(dndata.shape, dtype='float32')
     with np.errstate(invalid='ignore'):
         for i in range(radata.shape[0]):
-            radata[i, ...] = dndata[i] / gain[i] + bias[i]
+            radata[i, ...] = (dndata[i] / 10000) / gain[i] + bias[i]
         radata[radata < 0] = 0
     return radata
