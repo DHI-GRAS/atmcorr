@@ -148,7 +148,7 @@ def run_sixs_job(args):
         mysixs.outputs.optical_depth_total.total,
         mysixs.outputs.transmittance_global_gas.upward,
         mysixs.outputs.transmittance_total_scattering.upward]
-    return (xdict, adjcorr_params, moreargs)
+    return xdict, adjcorr_params, moreargs
 
 
 def perform_correction(radiance, corrparams):

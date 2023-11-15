@@ -1,7 +1,9 @@
 SUPPORTED_SENSORS = [
     'WV2', 'WV3', 'WV4', 'GE1',
     'PHR1A', 'PHR1B', 'SPOT6',
-    'L7', 'L8', 'S2A', 'S2B']
+    'L7', 'L8', 'S2A', 'S2B', 
+    'PNEO3', 'PNEO4'
+]
 
 
 def check_sensor_supported(sensor):
@@ -24,6 +26,8 @@ def sensor_is(sensor, target):
         return target in ['L7L8', 'L7', 'L8']
     elif sensor in ['S2A', 'S2B']:
         return target == 'S2'
+    elif sensor in ['PNEO3', 'PNEO4']:
+        return target == 'PNEO'
     raise ValueError('Unknown sensor \'{}\'.'.format(sensor))
 
 
@@ -36,7 +40,7 @@ def sensor_is_any(sensor, *targets):
 
 def sensor_group_bands(sensor):
     """Get target of sensors that have similar sets of bands"""
-    for target in ['WV', 'PHR', 'L7', 'L8', 'S2', 'WV_4band']:
+    for target in ['WV', 'PHR', 'PNEO', 'L7', 'L8', 'S2', 'WV_4band']:
         if sensor_is(sensor, target):
             return target
     raise ValueError('Unable to get sensor group for \'%s\'.'.format(sensor))

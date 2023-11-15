@@ -18,6 +18,9 @@ def get_geometry(sensor, mtdFile, **kwargs):
     elif sensor_is(sensor, 'PHR'):
         from . import pleiades
         gdict = pleiades.get_geometry(mtdFile)
+    elif sensor_is(sensor, 'PNEO'):
+        from . import pneo
+        gdict = pneo.get_geometry(mtdFile)
     elif sensor_is(sensor, 'L7L8'):
         from . import landsat8
         gdict = landsat8.get_geometry(mtdFile)
