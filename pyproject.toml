@@ -37,6 +37,6 @@ dependencies = [
     "tqdm",
     "ruamel",
     "lxml",
-    "satmeta @ git+https://github.com/DHI-GRAS/satmeta.git",
+    "satmeta @ git+https://github.com/DHI-GRAS/satmeta.git@satmeta2",
 ]
 dynamic = ["version"]
