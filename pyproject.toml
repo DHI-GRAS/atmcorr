@@ -35,7 +35,6 @@ dependencies = [
     "shapely",
     "scipy>=1.7.0",
     "tqdm",
-    "ruamel",
     "lxml",
     "satmeta @ git+https://github.com/DHI-GRAS/satmeta.git",
 ]
