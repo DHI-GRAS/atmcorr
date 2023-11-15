@@ -36,6 +36,9 @@ def dn_to_radiance(
     elif sensor_is(sensor, 'PHR'):
         from . import pleiades
         return pleiades.dn_to_radiance(**commonkw)
+    elif sensor_is(sensor, 'PNEO'):
+        from . import pneo
+        return pneo.dn_to_radiance(**commonkw)
     elif sensor_is(sensor, 'S2'):
         from . import sentinel2
         return sentinel2.toa_reflectance_to_radiance(

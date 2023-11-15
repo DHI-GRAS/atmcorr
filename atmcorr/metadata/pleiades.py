@@ -1,4 +1,4 @@
-import satmeta.pleiades.parser as plparser
+from satmeta.pleiades import parser as plparser
 
 
 def get_date(mtdFile):

@@ -1,8 +1,8 @@
-from dg_calibration import metadata
+from ..metadata.worldview import parse_metadata
 
 
 def get_geometry(mtdFile):
-    mtd = metadata.parse_metadata(mtdFile)
+    mtd = parse_metadata(mtdFile)
     angles = mtd['angles']
     gdict = {}
     gdict['day'] = mtd['sensing_time'].day

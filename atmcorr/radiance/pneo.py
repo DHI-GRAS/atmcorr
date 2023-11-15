@@ -1,10 +1,10 @@
 import numpy as np
 
-import satmeta.pleiades.parser as plparser
+import satmeta.pneo.parser as plparser
 
 
 def dn_to_radiance(dndata, mtdFile, band_ids):
-    """Apply radiometric correction to Pleadis image"""
+    """Apply radiometric correction to Pleiades Neo image"""
     metadata = plparser.parse_metadata(mtdFile)
     gain_bias = metadata['calibration_values']
     gain, bias = (np.array(gain_bias[key])[band_ids] for key in ['gain', 'bias'])

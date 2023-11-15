@@ -108,8 +108,10 @@ def main_optdict(options):
 
 
 def main(
-        data, profile,
-        sensor, mtdFile,
+        data, 
+        profile,
+        sensor, 
+        mtdFile,
         band_ids,
         sixs_params,
         interpolation=False,
@@ -118,7 +120,8 @@ def main(
         aotMultiplier=1.0,
         mtdFile_tile=None, date=None,
         use_modis=False, modis_atm_dir=MODIS_ATM_DIR,
-        earthdata_credentials=None, nthreads=None):
+        earthdata_credentials=None, nthreads=None
+    ):
     """Main workflow function for atmospheric correction
 
     Parameters
@@ -175,6 +178,9 @@ def main(
 
     if interpolation and (sensor not in ['S2A', 'S2B']):
         raise RuntimeError("Interpolation is supported only for sensors S2A and S2B")
+    
+    if tileSize == 0:
+        interpolation = False
 
     if use_modis:
         if not HAS_MODIS:
@@ -231,10 +237,12 @@ def main(
         tiling_shape = (1, 1)
 
     geometry_dict = viewing_geometry.get_geometry(
-        sensor, mtdFile,
+        sensor, 
+        mtdFile,
         mtdFile_tile=mtdFile_tile,
         dst_transform=tiling_transform,
-        dst_shape=tiling_shape)
+        dst_shape=tiling_shape
+    )
 
     rcurves_dict = response_curves.get_response_curves(sensor, band_ids)
 
@@ -315,8 +323,6 @@ def main(
     # prepare parallel execution
     jobgen = _job_generator()
     njobs = len(list(tile_index_iter(tiling_shape))) * nbands
-    pbar = functools.partial(
-        tqdm.tqdm, total=njobs, desc='Getting 6S params', unit='job', smoothing=0)
 
     # initialize processing pool
     if nthreads is None:
@@ -327,7 +333,11 @@ def main(
         nthreads = min(nthreads, 36)
     # execute 6S jobs
     with concurrent.futures.ThreadPoolExecutor(nthreads) as executor:
-        for tilecp, adjcoef, idx in pbar(executor.map(wrap_6S.run_sixs_job, jobgen)):
+        for tilecp, adjcoef, idx in tqdm.tqdm(
+            executor.map(wrap_6S.run_sixs_job, jobgen), 
+            total=njobs, 
+            desc='Getting 6S parameters.'
+        ):
             b, j, i = idx
             for field in correction_params.dtype.names:
                 correction_params[field][b, j, i] = tilecp[field]
