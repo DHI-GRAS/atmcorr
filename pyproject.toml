@@ -36,6 +36,6 @@ dependencies = [
     "scipy>=1.7.0",
     "tqdm",
     "lxml",
-    "satmeta @ git+https://github.com/DHI-GRAS/satmeta.git",
+    "satmeta @ git+https://github.com/DHI-GRAS/satmeta.git@v2.0.1",
 ]
 dynamic = ["version"]
